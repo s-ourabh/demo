@@ -1,0 +1,852 @@
+/*
+ ** OKafka Java Client version 0.8.
+ **
+ ** Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
+ */
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * 04/20/2020: This file is modified to support Kafka Java Client compatability to Oracle Transactional Event Queues.
+ *
+ */
+
+package org.oracle.okafka.clients.consumer.internals;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+import javax.jms.JMSException;
+
+import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
+import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.clients.ClientRequest;
+import org.apache.kafka.clients.ClientResponse;
+import org.oracle.okafka.clients.KafkaClient;
+import org.oracle.okafka.clients.Metadata;
+import org.oracle.okafka.clients.NetworkClient;
+import org.apache.kafka.clients.RequestCompletionHandler;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor.Assignment;
+import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor.GroupAssignment;
+import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor.Subscription;
+//import org.apache.kafka.clients.consumer.internals.SubscriptionState;
+//import org.oracle.okafka.common.Cluster;
+import org.apache.kafka.common.Cluster;
+import org.apache.kafka.common.KafkaException;
+import org.oracle.okafka.common.Node;
+import org.apache.kafka.common.TopicPartition;
+import org.oracle.okafka.common.internals.PartitionData;
+import org.oracle.okafka.common.internals.SessionData;
+import org.oracle.okafka.common.requests.CommitRequest;
+import org.oracle.okafka.common.requests.CommitResponse;
+import org.oracle.okafka.common.requests.ConnectMeRequest;
+import org.oracle.okafka.common.requests.ConnectMeResponse;
+import org.oracle.okafka.common.requests.FetchRequest;
+import org.oracle.okafka.common.requests.FetchResponse;
+import org.oracle.okafka.common.requests.JoinGroupRequest;
+import org.oracle.okafka.common.requests.JoinGroupResponse;
+import org.oracle.okafka.common.requests.OffsetResetRequest;
+import org.oracle.okafka.common.requests.OffsetResetResponse;
+import org.oracle.okafka.common.requests.SubscribeRequest;
+import org.oracle.okafka.common.requests.SubscribeResponse;
+import org.oracle.okafka.common.requests.SyncGroupRequest;
+import org.oracle.okafka.common.requests.SyncGroupResponse;
+import org.oracle.okafka.common.requests.UnsubscribeRequest;
+import org.oracle.okafka.common.requests.UnsubscribeResponse;
+import org.apache.kafka.common.utils.Time;
+import org.slf4j.Logger;
+import oracle.jms.AQjmsBytesMessage;
+
+public class ConsumerNetworkClient {
+	private static final int MAX_POLL_TIMEOUT_MS = 5000;
+	private final Logger log;
+	private final KafkaClient client;
+	private final Metadata metadata;
+	private final Time time;
+	private final boolean autoCommitEnabled;
+	private final int autoCommitIntervalMs;
+	private long nextAutoCommitDeadline;
+	private final long retryBackoffMs;
+	private final int maxPollTimeoutMs;
+	private final int requestTimeoutMs;
+	private final int sesssionTimeoutMs;
+	private final long defaultApiTimeoutMs;
+	private final SubscriptionState subscriptions;
+	private Set<String> subscriptionSnapshot;
+	private boolean rejoin = false;
+	private boolean needsJoinPrepare = true;
+	private SessionData sessionData = null;
+	private final List<ConsumerPartitionAssignor> assignors;
+	private final List<AQjmsBytesMessage> messages = new ArrayList<>();
+	private Node currentSession = null;
+	String consumerGroupId;
+	private String schemaName;
+	
+
+	public ConsumerNetworkClient(
+			String groupId,
+			org.apache.kafka.common.utils.LogContext logContext,
+			KafkaClient client,
+			Metadata metadata,
+			SubscriptionState subscriptions,
+			List<ConsumerPartitionAssignor> assignors,
+			boolean autoCommitEnabled,
+			int autoCommitIntervalMs,
+			Time time,
+			long retryBackoffMs,
+			int requestTimeoutMs,
+			int maxPollTimeoutMs,
+			int sessionTimeoutMs,
+			long defaultApiTimeoutMs) {
+		this.consumerGroupId = groupId;
+		this.log = logContext.logger(ConsumerNetworkClient.class);
+		this.client = client;
+		this.metadata = metadata;
+		this.subscriptions = subscriptions;
+		this.assignors = assignors;
+		this.autoCommitEnabled = autoCommitEnabled;
+		this.autoCommitIntervalMs = autoCommitIntervalMs;
+		this.time = time;
+		this.retryBackoffMs = retryBackoffMs;
+		this.maxPollTimeoutMs = Math.min(maxPollTimeoutMs, MAX_POLL_TIMEOUT_MS);
+		this.requestTimeoutMs = requestTimeoutMs;
+		this.sesssionTimeoutMs = sessionTimeoutMs;
+		//Snapshot of subscription. Useful for ensuring if all topics are subscribed.
+		this.subscriptionSnapshot = new HashSet<>();
+		this.defaultApiTimeoutMs = defaultApiTimeoutMs;
+
+		if (autoCommitEnabled)
+			this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
+	}
+
+	/**
+	 * Poll from subscribed topics.
+	 * Each node polls messages from a list of topic partitions for those it is a leader.
+	 * @param timeoutMs poll messages for all subscribed topics.
+	 * @return messages consumed.
+	 */
+	public List<AQjmsBytesMessage> poll(final long timeoutMs)  {
+		this.messages.clear();
+		Map<Node, String> pollMap = getPollableMap();
+		long now = time.milliseconds();
+		RequestCompletionHandler callback = new RequestCompletionHandler() {
+			public void onComplete(ClientResponse response) {
+				//do nothing;
+			}
+		};
+		for(Map.Entry<Node, String> poll : pollMap.entrySet()) {	
+			Node node = poll.getKey();
+			log.debug("Fetch Records for topic " + poll.getValue() + " from host " + node );
+			if(!this.client.ready(node, now)) {
+				log.debug("Failed to consume messages from node: {}", node);
+			} else {
+				ClientRequest request  = createFetchRequest(node, poll.getValue(), callback, requestTimeoutMs < timeoutMs ? requestTimeoutMs : (int)timeoutMs);
+				ClientResponse response = client.send(request, now);
+				handleFetchResponse(response, timeoutMs);
+				break;
+			}
+		}
+		return this.messages;
+	}
+	/**
+	 * 
+	 * @return map of <node , topic> . Every node is leader for its corresponding topic.
+	 */
+	private Map<Node, String> getPollableMap() {
+		try {
+			if(currentSession == null) {
+				List<Node> nodeList = NetworkClient.convertToOracleNodes(metadata.fetch().nodes());
+				
+				if(nodeList.size() == 1)
+				{
+					currentSession = nodeList.get(0);
+					log.debug("Leader Node " + currentSession);
+					metadata.setLeader(currentSession);
+					return Collections.singletonMap(currentSession, this.subscriptionSnapshot.iterator().next());
+				}
+				
+				//If more than 1 nodes available then, Pick a READY Node first. 
+				//Use a READY Node, invoke DBMS_TEQK.AQ$_CONNECTME() and use the node returned from there
+				for(Node nodeNow: nodeList)
+				{
+					// Passing now=0 so that this check do not fail just because Metadata update is due
+					if(client.isReady(nodeNow,0))
+					{
+						Node preferedNode   = getPreferredNode(nodeNow, nodeNow.user(),  subscriptionSnapshot.iterator().next() , consumerGroupId);
+						if(preferedNode == null)
+						{
+							currentSession = nodeNow;
+						}
+						else
+						{
+							int preferredInst = preferedNode.id();
+							for(Node currentNode : nodeList)
+							{
+								if(currentNode.id() == preferredInst)
+								{
+									currentSession = currentNode;
+									break;
+								}
+							}
+							if(currentSession == null)
+							{
+								// This should not happen. MetaData.fetch.nodes() should get one node for all the instances. 
+								currentSession = preferedNode; // No connection yet to this node. Connection will get setup eventually
+								nodeList.add(preferedNode);
+							}
+							// Closing other connections
+							for(Node closeNode : nodeList)
+							{
+								if(closeNode != currentSession)
+								{
+									//If DB connection exist for this node then close it
+									if(client.isReady(closeNode,0))
+									{
+										log.debug("Closing exta node: " + closeNode);
+										client.close(closeNode);
+									}
+								}
+							}
+						}
+						break;
+					}
+				}
+				// If there is no READY node, then pick a node randomly
+				if(currentSession == null) {
+					Cluster cluster = metadata.fetch();
+					if(cluster.controller() != null)
+						currentSession = (Node)cluster.controller();
+					else
+						currentSession = nodeList.get(0);
+					
+					log.debug("There is no ready node available :using " + currentSession);
+				}
+				else {
+					//Node oldLeader = clusterLeaderMap.get(cluster.clusterResource().clusterId());
+					log.debug("Leader for this metadata set to " + currentSession);
+					metadata.setLeader(currentSession);
+					//cluster.setLeader(currentSession);
+				}
+
+			}
+			return Collections.singletonMap(currentSession, this.subscriptionSnapshot.iterator().next());
+		} catch(java.util.NoSuchElementException exception) {
+			//do nothing
+		}
+		return Collections.emptyMap();
+	}
+
+	private ClientRequest createFetchRequest(Node destination, String topic, RequestCompletionHandler callback, int requestTimeoutMs) {
+		return this.client.newClientRequest(destination,  new FetchRequest.Builder(topic, requestTimeoutMs) , time.milliseconds(), true, requestTimeoutMs, callback);
+	}
+
+	private void handleFetchResponse(ClientResponse response, long timeoutMs) {
+		FetchResponse fetchResponse = (FetchResponse)response.responseBody();
+		messages.addAll(fetchResponse.getMessages());
+		if(response.wasDisconnected()) {
+			client.disconnected(metadata.getNodeById(Integer.parseInt(response.destination())), time.milliseconds()); 
+			rejoin = true;
+			currentSession = null;
+			if(sessionData != null)
+			{
+				log.info("Invalidating database session " + sessionData.name +". New one will get created.");
+				sessionData.invalidSessionData();
+			}
+			return;
+		}
+		joinGroupifNeeded(response, timeoutMs);
+	}
+
+	private void joinGroupifNeeded(ClientResponse response, long timeoutMs) {
+		try {
+			FetchResponse fResponse = (FetchResponse)response.responseBody();
+			Exception exception = fResponse.getException();
+			long elapsed = response.requestLatencyMs();
+			long prevTime = time.milliseconds();
+			long current;
+
+			while(elapsed < timeoutMs && rejoinNeeded(exception)) {
+				log.debug("JoinGroup Is Needed");
+				if (needsJoinPrepare) {
+					log.debug("Revoking");
+					onJoinPrepare();
+					needsJoinPrepare = false;
+				}
+				log.debug("Sending Join Group Request to database via node " + response.destination());
+				sendJoinGroupRequest(metadata.getNodeById(Integer.parseInt(response.destination())));
+				log.debug("Join Group Response received");
+				exception = null;
+				current = time.milliseconds();
+				elapsed = elapsed + (current - prevTime);
+				prevTime = current;
+			}
+		} catch(Exception e)
+		{
+			log.error(e.getMessage(), e);
+			throw e;
+		}
+	}
+
+	private boolean rejoinNeeded(Exception exception ) {
+		if (exception != null && exception instanceof JMSException) {
+			if( ((JMSException)exception).getLinkedException().getMessage().startsWith("ORA-24003") ) {
+				log.info("Join Group is needed");
+				return true;				
+			}
+		}
+
+		return rejoin;
+	}
+
+	private void onJoinPrepare() {
+		maybeAutoCommitOffsetsSync(time.milliseconds());
+
+		// execute the user's callback before rebalance
+		ConsumerRebalanceListener listener = subscriptions.rebalanceListener();
+		log.info("Revoking previously assigned partitions {}", subscriptions.assignedPartitions());
+		try {
+			Set<TopicPartition> revoked = new HashSet<>(subscriptions.assignedPartitions());
+			listener.onPartitionsRevoked(revoked);
+		} catch (InterruptException e) {
+			throw e;
+		} catch (Exception e) {
+			log.error("User provided listener {} failed on partition revocation", listener.getClass().getName(), e);
+		}
+        // Changes for 2.8.1 : SubscriptionState.java copied from org.apache.kafka* to org.oracle.okafka*
+		subscriptions.resetGroupSubscription();
+	}
+	private void sendJoinGroupRequest(Node node) {
+		log.debug("Sending JoinGroup");
+		SessionData sessionData = this.sessionData;
+		if(sessionData == null || sessionData.isInvalid()) {
+			// First join group request
+			String topic = subscriptionSnapshot.iterator().next();
+			sessionData = new SessionData(-1, -1, node.user(), topic,-1, null, -1,null, -1, -1, -1);
+			sessionData.addAssignedPartitions(new PartitionData(topic, -1, -1,
+					null, -1, -1, false));
+		}
+		long now = time.milliseconds();
+		ClientRequest request = this.client.newClientRequest(node, new JoinGroupRequest.Builder(sessionData), now, true);
+		log.info("Sending JoinGroup Request");
+		ClientResponse response = this.client.send(request, now);  // Invokes  AQKafkaConsumer.joinGroup
+		log.info("Got JoinGroup Response, Handling Join Group Response");
+		handleJoinGroupResponse(response);
+		log.info("Handled JoinGroup Response");
+	}
+
+	private void handleJoinGroupResponse(ClientResponse response) {
+		JoinGroupResponse jResponse = (JoinGroupResponse)response.responseBody();
+		//Map<Integer, Map<Integer, SessionData>> sData = jResponse.getSessionData();
+		int leader = jResponse.leader();
+		if(leader == 1) {
+			log.debug("Invoking onJoinLeader ");
+			onJoinLeader(metadata.getNodeById(Integer.parseInt(response.destination())), jResponse);
+		} else {
+			log.debug("Invoking onJoinFollower ");
+			onJoinFollower(metadata.getNodeById(Integer.parseInt(response.destination())), jResponse);
+		}
+
+	}
+
+	private void onJoinFollower(Node node, JoinGroupResponse jResponse) {
+		List<SessionData> sData = new ArrayList<>();
+		String topic = subscriptionSnapshot.iterator().next();
+		SessionData sessionData = new SessionData(-1, -1, node.user(),  topic, -1, null, -1, null, -1, -1, -1);
+		sessionData.addAssignedPartitions(new PartitionData(topic, -1, -1,
+				null, -1, -1, false));
+		sData.add(sessionData);
+		sendSyncGroupRequest(node, sData, jResponse.version());
+	}
+
+	private void onJoinLeader(Node node, JoinGroupResponse jResponse) {
+		Map<String, SessionData> sData = jResponse.getSessionData();
+		List<PartitionData> partitions = jResponse.partitions();
+		ConsumerPartitionAssignor assignor = lookUpAssignor();
+		if (assignor == null)
+			throw new IllegalStateException("Coordinator selected invalid assignment protocol.");
+
+		Set<String> allSubscribedTopics = new HashSet<>();
+		Map<String, Subscription> subscriptions = new HashMap<>();
+
+		String prevSession = null;
+		for(Map.Entry<String, SessionData> sessionEntry: sData.entrySet()) {
+			String sessionName = sessionEntry.getKey();
+			if(prevSession == null || !prevSession.equals(sessionName))
+			{
+
+				List<String> subTopics = new ArrayList<>();
+				subTopics.add(sessionEntry.getValue().getSubscribedTopics());
+				subscriptions.put(sessionName, new Subscription(subTopics, null));
+				allSubscribedTopics.addAll(subTopics);
+			}
+			prevSession = sessionName;
+		}
+
+		//Changes for 2.8.1 :; GroupSubscribe was changed to metadataTopics()
+		this.subscriptions.groupSubscribe(allSubscribedTopics);
+		metadata.setTopics(this.subscriptions.metadataTopics()); 
+
+		ConsumerPartitionAssignor.GroupSubscription gSub = new ConsumerPartitionAssignor.GroupSubscription(subscriptions);
+		
+		GroupAssignment gAssignment = assignor.assign(metadata.fetch(),gSub);
+		Map<String, Assignment> assignment = gAssignment.groupAssignment();
+		
+		log.debug("Invoking geAssignment");
+		List<SessionData> fAssignment = getAssignment(assignment, sData, partitions, jResponse.version());
+		sendSyncGroupRequest(node, fAssignment, jResponse.version());
+	}
+
+	private void sendSyncGroupRequest(Node node, List<SessionData> sessionData, int version) {
+		long now = time.milliseconds();
+		ClientRequest request = this.client.newClientRequest(node, new SyncGroupRequest.Builder(sessionData, version), now, true);
+		ClientResponse response = this.client.send(request, now);
+		handleSyncGroupResponse(response);
+	}
+
+	private void handleSyncGroupResponse(ClientResponse response) {
+		SyncGroupResponse syncResponse = (SyncGroupResponse)response.responseBody();
+		Exception exception = syncResponse.getException();
+		if(exception == null) {
+			onJoinComplete(syncResponse.getSessionData());
+			rejoin = false;
+			needsJoinPrepare = true;
+			this.sessionData = syncResponse.getSessionData();    	  
+		}
+
+	}
+
+	protected void onJoinComplete(SessionData sessionData) {
+		log.debug("OnJoinComplete Invoked");
+		List<TopicPartition> assignment = new ArrayList<>();
+		for(PartitionData pData : sessionData.getAssignedPartitions()) {
+			log.debug("Assigned PartitionData " + pData.toString());
+			assignment.add(pData.getTopicPartition());
+		}
+		subscriptions.assignFromSubscribed(assignment);
+		//Changes for 2.8.1
+		// Seek to current offset per say
+		assignment.stream().forEach(tp->
+			{
+				subscriptions.seek(tp,0);
+				subscriptions.completeValidation(tp);
+			});
+		
+		
+
+		ConsumerPartitionAssignor assignor = lookUpAssignor();
+		// give the assignor a chance to update internal state based on the received
+		// assignment
+		// Changes for 2.8.1: See if GroupInstanceId can be fetched from Local Config 
+		ConsumerGroupMetadata cgMetaData = new ConsumerGroupMetadata(sessionData.getSubscriberName(), sessionData.getVersion(), sessionData.name, Optional.of(sessionData.name));
+		assignor.onAssignment(new ConsumerPartitionAssignor.Assignment(assignment, null), cgMetaData);
+
+		// reschedule the auto commit starting from now
+		this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
+
+		// execute the user's callback after rebalance
+		ConsumerRebalanceListener listener = subscriptions.rebalanceListener();
+		log.debug("Setting newly assigned partitions {}", subscriptions.assignedPartitions());
+		try {
+			Set<TopicPartition> assigned = new HashSet<>(subscriptions.assignedPartitions());
+			listener.onPartitionsAssigned(assigned);
+		} catch (InterruptException e) {
+			throw e;
+		} catch (Exception e) {
+			log.error("User provided listener {} failed on partition assignment", listener.getClass().getName(), e);
+		}
+	}
+
+	private List<SessionData> getAssignment(Map<String, Assignment> assignment, Map<String, SessionData> sData, List<PartitionData> partitions, int version) {
+		log.debug("Getting new assignment"); 
+		List<SessionData> fAssignment = new ArrayList<>();
+
+		Map<TopicPartition, PartitionData> pDataBytp = new HashMap<>();
+		Map<TopicPartition, PartitionData> pDataBytp2 = new HashMap<>();
+
+		for(SessionData data : sData.values()) {
+			for(PartitionData pData : data.getAssignedPartitions()) {
+				pDataBytp.put(pData.getTopicPartition(), pData);
+			}
+		}
+
+		for(PartitionData pData : partitions) {
+			pDataBytp2.put(pData.getTopicPartition(), pData);
+		}
+
+		for(Map.Entry<String, Assignment> assignmentEntry : assignment.entrySet()) {
+			String sessionName = assignmentEntry.getKey();
+			SessionData prevData = sData.get(sessionName);
+
+			SessionData data = new SessionData(prevData.getSessionId(), prevData.getInstanceId(), prevData.getSchema(),prevData.getSubscribedTopics(), prevData.getQueueId(),
+					prevData.getSubscriberName(), prevData.getSubscriberId(), prevData.createTime, prevData.getLeader(), version, prevData.getAuditId());
+			for(TopicPartition tp : assignmentEntry.getValue().partitions()) {
+
+				if(pDataBytp.get(tp) == null)
+					data.addAssignedPartitions(pDataBytp2.get(tp));
+				else 
+					data.addAssignedPartitions(pDataBytp.get(tp));				 
+			}
+
+			fAssignment.add(data);
+
+		}
+		return fAssignment;
+	}
+/*
+ * DummyCluster no longer being used
+	private Cluster getDummyCluster(List<PartitionData> partitions) {
+
+		Cluster cluster = metadata.fetch();
+		List<PartitionInfo> pInfo = new ArrayList<>();
+		for(PartitionData pData : partitions) {
+			pInfo.add(new PartitionInfo(pData.getTopicPartition().topic(), pData.getTopicPartition().partition(), cluster.nodes().get(0), null, null));
+		}
+		return new Cluster("dummy", cluster.nodes(), pInfo,
+				cluster.unauthorizedTopics(), cluster.internalTopics(), cluster.getConfigs());
+
+	}*/
+
+	private ConsumerPartitionAssignor lookUpAssignor() {
+		if(this.assignors.size() == 0) 
+			return null;
+		return this.assignors.get(0);
+	} 
+
+	/**
+	 * Subscribe to topic if not done
+	 * @return true if subscription is successsful else false.
+	 */
+	public boolean mayBeTriggerSubcription(long timeout) {
+		if(!subscriptions.subscription().equals(subscriptionSnapshot)) {
+			rejoin = true;
+			String topic = getSubscribableTopics();
+			long now = time.milliseconds();
+			Node node = client.leastLoadedNode(now);
+			if( node == null || !client.ready(node, now) ) {
+				log.error("Failed to subscribe to topic: {}", topic);
+				return false;
+			}
+
+			ClientRequest request = this.client.newClientRequest(node, new SubscribeRequest.Builder(topic), now, true, requestTimeoutMs < timeout ? requestTimeoutMs: (int)timeout, null);
+			ClientResponse response = this.client.send(request, now);
+
+			return handleSubscribeResponse(response);
+
+		}
+		return true;
+
+	}
+
+	public void maybeUpdateMetadata(long timeout) {
+		Cluster cluster = metadata.fetch();
+		long curr = time.milliseconds();
+		if(cluster.isBootstrapConfigured() || metadata.timeToNextUpdate(curr) == 0 ? true : false) {
+			int lastVersion = metadata.version();
+			long elapsed = 0;
+			long prev;
+			
+			while ((elapsed <= timeout) && (metadata.version() <= lastVersion) && !metadata.isClosed()) {
+				prev = time.milliseconds();
+				client.maybeUpdateMetadata(curr);
+				curr = time.milliseconds();
+				elapsed = elapsed + (prev - curr);
+			}
+			log.debug("Metadata updated:Current Metadata Version " + metadata.version());
+
+		}
+	}
+
+	private boolean handleSubscribeResponse(ClientResponse response) {
+		if(response.wasDisconnected()) {
+			client.disconnected(metadata.getNodeById(Integer.parseInt(response.destination())), time.milliseconds());
+		}
+		SubscribeResponse subscribeResponse = (SubscribeResponse)response.responseBody();
+		JMSException exception = subscribeResponse.getException();
+		if(exception != null) { 
+			log.error("failed to subscribe to topic {}", subscribeResponse.getTopic());		
+			return false;
+		}else {
+			this.subscriptionSnapshot.add(subscribeResponse.getTopic());
+		}
+		return true;
+
+	}
+
+	/**
+	 * Updates subscription snapshot and returns subscribed topic. 
+	 * @return subscribed topic
+	 */
+	private String getSubscribableTopics() {
+		//this.subcriptionSnapshot = new HashSet<>(subscriptions.subscription());
+		return getSubscribedTopic();
+	}
+
+	/**
+	 * return subscribed topic.
+	 */
+	private String getSubscribedTopic() {
+		HashSet<String> subscribableTopics = new HashSet<>();
+		for(String topic : subscriptions.subscription()) {
+			if(!this.subscriptionSnapshot.contains(topic)) {
+				subscribableTopics.add(topic);
+				this.subscriptionSnapshot.clear();
+			}	
+		}
+		return subscribableTopics.iterator().next();
+	}
+
+	public boolean commitOffsetsSync(Map<TopicPartition, OffsetAndMetadata> offsets, long timeout) throws Exception{
+		try {
+		log.info("Sending synchronous commit of offsets: {} request", offsets);	
+		long elapsed = 0;
+		ClientRequest request;
+		ClientResponse response;
+		//Changes for 2.8.1:: Send leader Node explicitly here
+		//request = this.client.newClientRequest(null, new CommitRequest.Builder(getCommitableNodes(offsets), offsets), time.milliseconds(), true);
+		Map<Node, List<TopicPartition>> commitableNodes = getCommitableNodes(offsets);
+		if(commitableNodes == null || commitableNodes.size() == 0)
+		{
+			log.info("No offsets to commit. Return");
+			return true;
+		}
+		request = this.client.newClientRequest(metadata.getLeader(), new CommitRequest.Builder(commitableNodes, offsets), time.milliseconds(), true);
+		response = this.client.send(request, time.milliseconds());
+		handleCommitResponse(response); 
+
+		if(((CommitResponse)response.responseBody()).error()) {
+
+			throw ((CommitResponse)response.responseBody()).getResult()
+			.entrySet().iterator().next().getValue();
+		}
+		}catch(Exception e)
+		{
+			log.error("Exception while committing messages " + e,e);
+			throw e;
+		}
+
+		return true;
+	}
+
+	private void handleCommitResponse(ClientResponse response) {
+		CommitResponse commitResponse = (CommitResponse)response.responseBody();
+		Map<Node, List<TopicPartition>> nodes =  commitResponse.getNodes();
+		Map<TopicPartition, OffsetAndMetadata> offsets = commitResponse.offsets();
+		Map<Node, Exception> result = commitResponse.getResult();
+		for(Map.Entry<Node, Exception> nodeResult : result.entrySet()) {
+			if(nodeResult.getValue() == null) {
+				for(TopicPartition tp : nodes.get(nodeResult.getKey())) {
+					log.debug("Commited to topic partiton: {} with  offset: {} ", tp, offsets.get(tp));
+					offsets.remove(tp);
+				}
+				nodes.remove(nodeResult.getKey());	
+			} else {
+				for(TopicPartition tp : nodes.get(nodeResult.getKey())) {
+					log.error("Failed to commit to topic partiton: {} with  offset: {} ", tp, offsets.get(tp));
+				}
+
+			}	
+		}	
+	}
+
+	/**
+	 * Returns nodes that have sessions ready for commit.
+	 * @param offsets Recently consumed offset for each partition since last commit.
+	 * @return map of node , list of partitions(node is leader for its corresponding partition list) that are ready for commit.
+	 */
+	private Map<Node, List<TopicPartition>> getCommitableNodes(Map<TopicPartition, OffsetAndMetadata> offsets) {
+		Map<Node, List<TopicPartition>> nodeTPMap = new HashMap<>();
+		Cluster cluster = metadata.fetch();
+		
+		Node leaderNode = metadata.getLeader();
+		if(leaderNode== null)
+		{
+			//Find a ready node
+			List<org.apache.kafka.common.Node> kafkaNodeList = cluster.nodes();
+			for(org.apache.kafka.common.Node node :kafkaNodeList )
+			{
+				if(client.isReady((org.oracle.okafka.common.Node)node, 0))
+				{
+					leaderNode = (org.oracle.okafka.common.Node)node;
+					log.info("Leader Node not present. Picked first ready node: " + leaderNode);
+					break;
+				}
+			}
+		}
+		log.debug("Sending Commit request to leader Node " + leaderNode);
+		
+		for(Map.Entry<TopicPartition, OffsetAndMetadata> metadata : offsets.entrySet())	{
+			if(!client.ready(leaderNode, time.milliseconds())) {
+				log.info("Failed to send commit as Leader node is not ready to send commit: " + leaderNode);
+				log.error("Failed to commit to topic partiton: {} with  offset: {} ", metadata.getKey(), metadata.getValue());
+			} else {
+				List<TopicPartition> nodeTPList= nodeTPMap.get(leaderNode);
+				if(nodeTPList == null) {
+					nodeTPList = new ArrayList<TopicPartition>();
+					nodeTPMap.put(leaderNode, nodeTPList );
+				}
+				nodeTPList.add(metadata.getKey());
+			}
+		}
+		return nodeTPMap;
+	}
+	public boolean resetOffsetsSync(Map<TopicPartition, Long>  offsetResetTimestamps, long timeout) {
+		long now = time.milliseconds();
+		Node node = client.leastLoadedNode(now);
+		if( node == null || !client.ready(node, now) ) 
+			return false;
+		ClientResponse response = client.send(client.newClientRequest(node, new OffsetResetRequest.Builder(offsetResetTimestamps, 0), now, true, requestTimeoutMs < timeout ? requestTimeoutMs: (int)timeout, null), now);
+		return handleOffsetResetResponse(response, offsetResetTimestamps);
+	}
+
+	public boolean handleOffsetResetResponse(ClientResponse response, Map<TopicPartition, Long>  offsetResetTimestamps) {
+		OffsetResetResponse offsetResetResponse = (OffsetResetResponse)response.responseBody();
+		Map<TopicPartition, Exception> result = offsetResetResponse.offsetResetResponse();
+		Set<TopicPartition> failed = new HashSet<>();
+		for(Map.Entry<TopicPartition, Exception> tpResult : result.entrySet()) {
+			Long offsetLong = offsetResetTimestamps.get(tpResult.getKey());
+			String offset ;
+
+			if( offsetLong == -2L )
+				offset = "TO_EARLIEST" ;
+			else if (offsetLong == -1L) 
+				offset = "TO_LATEST";
+			else offset = Long.toString(offsetLong);
+			if( tpResult.getValue() == null) {
+				subscriptions.requestOffsetReset(tpResult.getKey(), null);
+				log.trace("seek to offset {} for topicpartition  {} is successful", offset, tpResult.getKey());
+			}
+			else {
+				if(tpResult.getValue() instanceof java.sql.SQLException && ((java.sql.SQLException)tpResult.getValue()).getErrorCode() == 25323)
+					subscriptions.requestOffsetReset(tpResult.getKey(), null);
+				else failed.add(tpResult.getKey());
+
+				log.warn("Failed to update seek for topicpartition {} to offset {}", tpResult.getKey(), offset);
+			}
+
+		}
+		//Changes for 2.8.1. Copied SubscriptionState.java from org.apache.kafka.clients.consumer.internals to 
+		// org.oracle.okafka.clients.consumer.internals for this requestFailed method.
+		subscriptions.requestFailed(failed, time.milliseconds() + retryBackoffMs);
+		return true;
+	}
+	/**
+	 * Synchronously commit last consumed offsets if auto commit is enabled.
+	 */
+	public void maybeAutoCommitOffsetsSync(long now) {
+		if (autoCommitEnabled && now >= nextAutoCommitDeadline) {
+			this.nextAutoCommitDeadline = now + autoCommitIntervalMs;
+			doCommitOffsetsSync();
+		}
+	}
+
+	public void clearSubscription() {
+		//doCommitOffsetsSync();
+		this.subscriptionSnapshot.clear();			
+	}
+
+	/**
+	 * Synchronously commit offsets.
+	 */
+	private void doCommitOffsetsSync() {
+		Map<TopicPartition, OffsetAndMetadata> allConsumedOffsets = subscriptions.allConsumed();
+
+		try {
+			commitOffsetsSync(allConsumedOffsets, 0);
+
+		} catch(Exception exception) {
+			//nothing to do
+		} finally {
+			nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
+		}
+	} 
+
+	public void unsubscribe() {
+		ClientRequest request = this.client.newClientRequest(null, new UnsubscribeRequest.Builder(), time.milliseconds(), true);
+		ClientResponse response = this.client.send(request, time.milliseconds());
+		handleUnsubscribeResponse(response);
+
+	}
+
+	private void handleUnsubscribeResponse(ClientResponse response) {
+		UnsubscribeResponse  unsubResponse = (UnsubscribeResponse)response.responseBody();
+		for(Map.Entry<String, Exception> responseByTopic: unsubResponse.response().entrySet()) {
+			if(responseByTopic.getValue() == null)
+				log.trace("Failed to unsubscribe from topic: with exception: ", responseByTopic.getKey(), responseByTopic.getValue());
+			else
+				log.trace("Unsubscribed from topic: ", responseByTopic.getKey());
+		}
+
+	}
+
+	/**
+	 * Return the time to the next needed invocation of {@link #poll(long)}.
+	 * @param now current time in milliseconds
+	 * @return the maximum time in milliseconds the caller should wait before the next invocation of poll()
+	 */
+	public long timeToNextPoll(long now, long timeoutMs) {
+		if (!autoCommitEnabled)
+			return timeoutMs;
+
+		if (now > nextAutoCommitDeadline)
+			return 0;
+
+		return Math.min(nextAutoCommitDeadline - now, timeoutMs);
+	}
+
+	/**
+	 * Closes the AQKafkaConsumer.
+	 * Commits last consumed offsets if auto commit enabled
+	 * @param timeoutMs
+	 */
+	public void close(long timeoutMs) throws Exception {
+		KafkaException autoCommitException = null;
+		if(autoCommitEnabled) {
+			Map<TopicPartition, OffsetAndMetadata> allConsumedOffsets = subscriptions.allConsumed();
+			try {
+				commitOffsetsSync(subscriptions.allConsumed(), timeoutMs);
+			} catch (Exception exception) {
+				autoCommitException= new KafkaException("failed to commit consumed messages", exception);
+			}
+		}
+		this.client.close();
+		if(autoCommitException != null)
+			throw autoCommitException;
+	}
+
+
+	private Node getPreferredNode(Node currentNode, String schema, String topic, String groupId)
+	{
+		long now = time.milliseconds();
+		ClientRequest request = this.client.newClientRequest(currentNode, new ConnectMeRequest.Builder(schema,topic,groupId), now, true);
+		log.info("Sending ConnectMe Request");
+		ClientResponse response = this.client.send(request, now);  // Invokes  DBMS_TEQK.AQ$_CONNECT_ME
+		log.info("Got JoinGroup Response, Handling Join Group Response");
+		ConnectMeResponse connMeResponse = (ConnectMeResponse)response.responseBody();
+		return connMeResponse.getPreferredNode();
+	}
+}

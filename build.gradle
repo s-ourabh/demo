@@ -1,0 +1,43 @@
+repositories {
+	mavenCentral()
+	jcenter()
+} 
+
+apply plugin: 'java'
+
+println 'Creating Okafka1.0.jar'
+
+
+sourceSets {
+   		main {
+      		java {
+         		srcDir 'src'
+      		}
+   		}
+	}
+	
+dependencies {
+      // Use JUnit test framework
+      //testImplementaion 'junit:junit:4.12'
+      implementation group: 'com.oracle.database.messaging', name: 'aqapi', version: '19.3.0.0'
+      implementation group: 'com.oracle.ojdbc', name: 'ojdbc8', version: '19.3.0.0'
+      implementation group: 'javax.transaction', name: 'jta', version: '1.1'
+      implementation group: 'javax.jms', name: 'javax.jms-api', version: '2.0'
+      implementation group: 'org.slf4j', name: 'slf4j-api', version: '2.0.0-alpha0'
+      implementation group: 'com.oracle.database.messaging', name: 'aqapi', version: '19.3.0.0'    
+	  //implementation group: 'org.apache.kafka', name: 'kafka_2.13', version: '2.8.1'
+	  implementation 'org.apache.kafka:kafka-clients:2.8.1'
+
+      testImplementation group: 'org.easymock', name: 'easymock', version: '3.6'
+      testImplementation group: 'org.powermock', name: 'powermock-module-junit4', version: '2.0.0-beta.5'
+      testImplementation group: 'org.powermock', name: 'powermock-api-support', version: '2.0.5'
+      testImplementation group: 'org.powermock', name: 'powermock-api-easymock', version: '2.0.0-beta.5'
+      
+      implementation fileTree(dir: 'libs', include: ['*.jar'])
+}
+	
+jar {
+      description 'Generates okafka client jar without dependencies' 
+      baseName = 'okafka'
+      version = '0.9'
+}
