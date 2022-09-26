@@ -39,5 +39,11 @@ dependencies {
 jar {
       description 'Generates okafka client jar without dependencies' 
       baseName = 'okafka'
-      version = '0.9'
+      version = '1.0'
+      manifest {
+        attributes (
+        'version': '1.0'
+      	'Build.Date': new Date().format("yyyy-MM-dd’T’HH:mm:ssZ")
+      	)
+  	  }
 }
