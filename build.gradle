@@ -42,8 +42,8 @@ jar {
       version = '1.0'
       manifest {
         attributes (
-        'version': '1.0'
-      	'Build.Date': new Date().format("yyyy-MM-dd’T’HH:mm:ssZ")
+        'Version': '1.0',
+      	'Build-Time-ISO-8601':new Date().format("yyyy-MM-dd HH:mm:ss")
       	)
   	  }
 }
