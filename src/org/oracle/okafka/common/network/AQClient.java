@@ -283,7 +283,8 @@ private void getPartitionInfo(List<String> topics, List<String> topicsRem, Conne
 	if(nodes.size() <= 0 || topics == null || topics.isEmpty())
 		return;
 
-	String queryQShard = "select shard_id, enqueue_instance from user_queue_shards where  name = ? ";
+	//String queryQShard = "select shard_id, enqueue_instance from user_queue_shards where  name = ? ";
+	String queryQShard = "select shard, OWNER_INSTANCE from sys.aq$_queue_shards where  QUEUE = (select qid from user_queues where name = upper(?)) ";
 	PreparedStatement stmt1 = null;
 	try {
 		stmt1 = con.prepareStatement(queryQShard);

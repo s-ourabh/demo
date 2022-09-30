@@ -123,12 +123,12 @@ public class QPATInfo implements OracleData, OracleDataFactory, ObjectData {
 		return (Integer)((BigDecimal)_struct.getAttribute(4)).intValue();
 	}
 	
-	public void setSessionId(int session) throws SQLException{
+	public void setSessionId(long session) throws SQLException{
 		_struct.setAttribute(5, new BigDecimal(session));
 	}
 	
-	public Integer getSessionId() throws SQLException{
-		return (Integer)((BigDecimal)_struct.getAttribute(5)).intValue();
+	public Long getSessionId() throws SQLException{
+		return (Long)((BigDecimal)_struct.getAttribute(5)).longValue();
 	}
 	
 	public void setGroupLeader(int leader) throws SQLException{
@@ -175,12 +175,12 @@ public class QPATInfo implements OracleData, OracleDataFactory, ObjectData {
 		return (Integer)((BigDecimal)_struct.getAttribute(10)).intValue();
 	}
 	
-	public void setAuditId(int auditId) throws SQLException{
+	public void setAuditId(long auditId) throws SQLException{
 		_struct.setAttribute(11, new BigDecimal(auditId));
 	}
 	
-	public Integer getAuditId() throws SQLException{
-		return (Integer)((BigDecimal)_struct.getAttribute(11)).intValue();
+	public Long getAuditId() throws SQLException{
+		return (Long)((BigDecimal)_struct.getAttribute(11)).longValue();
 	}
 	
 	public void setTimeStamp(java.sql.Time time) throws SQLException{

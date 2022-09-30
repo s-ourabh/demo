@@ -12,9 +12,9 @@ public class SessionData implements Comparable<SessionData>{
 	private String schema;
 	private String subscribedtopic;
 	private String subscriberName;
-	private int sessionId;
+	private long sessionId;
 	private int instanceId;
-	private int auditId;
+	private long auditId;
 	private int subscriberId;
 	private int leader;
 	private int version;
@@ -29,8 +29,8 @@ public class SessionData implements Comparable<SessionData>{
 	
 	private boolean invalid = false;
 	
-	public SessionData(int sessionId, int instanceId, String schema,  String subTopic,int queueId, 
-			          String subscriberName,int subscriberId, Date createTime, int leader, int version, int auditId) {
+	public SessionData(long sessionId, int instanceId, String schema,  String subTopic,int queueId, 
+			          String subscriberName,int subscriberId, Date createTime, int leader, int version, long auditId) {
 		this.sessionId = sessionId;
 		this.instanceId = instanceId;
 		this.schema = schema;
@@ -68,7 +68,7 @@ public class SessionData implements Comparable<SessionData>{
 		return this.instanceId;
 	}
 	
-	public int getSessionId() {
+	public long getSessionId() {
 		return this.sessionId;
 	}
 	
@@ -87,7 +87,7 @@ public class SessionData implements Comparable<SessionData>{
 		return this.leader;
 	}
 	
-	public int getAuditId() {
+	public long getAuditId() {
 		return this.auditId;
 	}
 	public List<PartitionData> getAssignedPartitions() {

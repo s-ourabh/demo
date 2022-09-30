@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 
 import oracle.jdbc.pool.OracleDataSource;
 import oracle.jms.AQjmsFactory;
+import oracle.jms.AQjmsSession;
 
 public class ConnectionUtils {
     
@@ -95,6 +96,8 @@ public class ConnectionUtils {
     	if(conn == null)
     		throw new ConnectionException("Invalid argument: Connection cannot be null");
     	TopicSession sess = conn.createTopicSession(transacted, mode);
+    	//ToDo: Validate if caching of dequeue statement helps or not
+    	((AQjmsSession)sess).setDeqStmtCachingFlag(true);
     	return sess;
     }
     
