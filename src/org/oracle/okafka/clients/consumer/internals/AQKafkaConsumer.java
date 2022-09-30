@@ -1278,6 +1278,16 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         		String serviceName = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("SERVICE_NAME");
         		String instanceName = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("INSTANCE_NAME");
         		String user = oConn.getMetaData().getUserName();
+        		try {
+        			String sessionId = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SESSION_ID");
+        			String serialNum = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERIAL_NUM");
+        			String serverPid = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERVER_PID");
+        		
+        			log.info("Database Consumer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid);
+        		}catch(Exception e)
+        		{
+        			
+        		}
 
         		node.setId(instId);
         		node.setService(serviceName);
