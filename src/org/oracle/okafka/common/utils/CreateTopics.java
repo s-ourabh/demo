@@ -77,41 +77,26 @@ public class CreateTopics {
 			 String topic;
 			 TopicDetails details;
 			 long retentionSec = 0l;
-			 boolean retentionSet = false;
 			 for(Map.Entry<String, TopicDetails> topicDetails : topics.entrySet()) {
 				 topic = topicDetails.getKey().trim();
 				 details = topicDetails.getValue();
 				 try {
-					 String query = "declare qprops  dbms_aqadm.QUEUE_PROPS_T; begin ";
 					 for(Map.Entry<String, String> config : details.configs.entrySet()) {
 						 String property = config.getKey().trim();
 						 if(property.equals("retention.ms")) {
 							 retentionSec = Long.parseLong(config.getValue().trim())/1000;
-							 query =  query + "qprops.retention_time := ? ;";
-							retentionSet = true;
-						 }
+					     }
 						 else throw new InvalidConfigurationException("Invalid configuration: " + property + " provided for topic: " + topic);
 					 }
-					 query = query + "sys.dbms_aqadm.create_sharded_queue(queue_name=>?, multiple_consumers=>(case ? when 1 then true else false end), queue_properties => qprops); end;";
-					 cStmt = jdbcConn.prepareCall(query);
-					 int indx = 1;
-					 if(retentionSet) {
-						 cStmt.setLong(indx,retentionSec);
-						 indx++;
-					 }
-					 cStmt.setString(indx++, ConnectionUtils.enquote(topic));
-					 cStmt.setInt(indx++, 1);
-					 //log.debug("Executing Statement : " + query);
+					 cStmt = jdbcConn.prepareCall("{call DBMS_TEQK.AQ$_CREATE_KAFKA_TOPIC(topicname=>? ,partition_num=>?, retentiontime=>?)}");
+					 cStmt.setString(1, ConnectionUtils.enquote(topic));
+					 cStmt.setInt(2, details.numPartitions);
+					 cStmt.setLong(3,retentionSec);
 					 cStmt.execute();
-					 setPartitionNum(jdbcConn,topic,details.numPartitions);
-					 setKeyBasedEnqueue(jdbcConn,topic);
-					 setStickyDeq(jdbcConn,topic);
-					 startTopic(jdbcConn,topic);
-
 				 } catch(SQLException sqlEx) {
 					 if ( sqlEx.getErrorCode() == 24019 || sqlEx.getErrorCode() == 44003 ) {
 						 result.put(topic, new InvalidTopicException(sqlEx)); 
-					 }
+				   }
 					 else if ( sqlEx.getErrorCode() == 24001 ) {
 						 result.put(topic, new TopicExistsException("Topic already exists: ", sqlEx));
 					 }
@@ -122,16 +107,15 @@ public class CreateTopics {
 				 if(result.get(topic) == null) {
 					 result.put(topic, null);
 				 }
-			 }
+		    }
 		 } finally {
 			 try { 
 				 if(cStmt != null)
 					 cStmt.close();
-			 } catch(Exception e) {
+			   } catch(Exception e) {
 				 //do nothing
-			 }
+			   }
 		 }
 		 return result;
 	}
-
 }
