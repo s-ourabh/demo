@@ -620,6 +620,11 @@ public class NetworkClient implements KafkaClient {
 					List<Node> nodes = convertToOracleNodes(metadata.fetch().nodes());
 					if(nodes != null)
 					{
+						String oldClusterId = null;
+						try {
+							oldClusterId = metadata.fetch().clusterResource().clusterId();
+						} catch(Exception ignoreExcp) {}
+						
 						Node oldNode = nodes.get(0);
 						Node newNode = new Node(oldNode.host(), oldNode.port(), oldNode.serviceName());
 						log.info("MetaData Updater : Trying to connect to: " + newNode);
@@ -627,12 +632,12 @@ public class NetworkClient implements KafkaClient {
 						if(connected) {
 							log.info("Connection Successful. Using this node to fetch metadata");
 							node = newNode;
-							Cluster renewCluster = new Cluster(null, Collections.singletonList(newNode), new ArrayList<>(0),
+							Cluster renewCluster = new Cluster(oldClusterId, Collections.singletonList(newNode), new ArrayList<>(0),
 									Collections.emptySet(), Collections.emptySet());
 							this.metadata.update(renewCluster, Collections.<String>emptySet(), time.milliseconds(), true);
 						}
 						else {
-							log.debug("Not able to connect to "+ newNode);
+							log.info("Not able to connect to "+ newNode);
 						}
 					}
 				}

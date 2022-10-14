@@ -488,7 +488,6 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		}
 		return new ClientResponse(request.makeHeader((short)1), request.callback(), request.destination(), 
                 request.createdTimeMs(), time.milliseconds(), false,null,null, new UnsubscribeResponse(response));
-
 	}
 	
 	private ClientResponse getMetadata(ClientRequest request) {
@@ -561,7 +560,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 	 * @return
 	 */
     private ClientResponse joinGroup(ClientRequest request) {	
-    	log.info("Sending  AQ Join Group Request");
+    	log.debug("Sending  AQ Join Group Request");
 		JoinGroupRequest.Builder builder = (JoinGroupRequest.Builder)request.requestBuilder();
 		JoinGroupRequest  joinRequest= builder.build();
 		SessionData sessionData = joinRequest.getSessionData();
@@ -572,22 +571,26 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		
 		try {
 		Node node = metadata.getNodeById(Integer.parseInt(request.destination()));
-		log.info("Destination Node : " + node.toString());
+		log.debug("Destination Node : " + node.toString());
 		TopicConsumers consumers = topicConsumersMap.get(node);
 		Connection con = ((AQjmsSession)consumers.getSession()).getDBConnection();
 		
 		final String qpimLstType = "SYS.AQ$_QPIM_INFO_LIST";
 		final String qpatLstType = "SYS.AQ$_QPAT_INFO_LIST";
-		log.info("Assigned partition Size " + sessionData.getAssignedPartitions().size());
+		log.debug("Assigned partition Size " + sessionData.getAssignedPartitions().size());
 		QPATInfo[] a = new QPATInfo[sessionData.getAssignedPartitions().size()];
 		//System.out.println(" QPAT SIZE " + a.length);
 		int ind = 0;
 		for(PartitionData pData: sessionData.getAssignedPartitions()) {
 			QPATInfo qpat = new QPATInfo();
-			qpat.setSchema(sessionData.getSchema() != null ? sessionData.getSchema().toUpperCase() : null);
-			qpat.setQueueName(pData.getTopicPartition().topic().toUpperCase());
+			qpat.setSchema(sessionData.getSchema() != null ? ConnectionUtils.enquote(sessionData.getSchema().toUpperCase()) : null);
+			qpat.setQueueName(ConnectionUtils.enquote(pData.getTopicPartition().topic().toUpperCase()));
 			qpat.setQueueId(pData.getQueueId());
-			qpat.setSubscriberName(pData.getSubName() == null ? configs.getString(ConsumerConfig.GROUP_ID_CONFIG).toUpperCase(): pData.getSubName().toUpperCase());
+			String subscriberNameIn =pData.getSubName() == null ? configs.getString(ConsumerConfig.GROUP_ID_CONFIG).toUpperCase(): pData.getSubName().toUpperCase();
+			if(subscriberNameIn != null) {
+				subscriberNameIn = ConnectionUtils.enquote(subscriberNameIn);
+			}
+			qpat.setSubscriberName(subscriberNameIn);
 			qpat.setSubscriberId(pData.getSubId());
 			qpat.setGroupLeader(sessionData.getLeader());
 			qpat.setPartitionId(pData.getTopicPartition().partition() == -1 ? -1 : pData.getTopicPartition().partition() *2);
@@ -623,7 +626,15 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			qpimInfo = ((QPIMInfoList)odata).getArray();
 		}
 		
-		log.info("Return from DBMS_TEQK.AQ$_JOIN_GROUP. QPATINFO Size " +qpatInfo.length );
+		log.debug("Return from DBMS_TEQK.AQ$_JOIN_GROUP. QPATINFO Size " +qpatInfo.length );
+		for(int i = 0; i < qpatInfo.length; i++)
+		{
+			
+			log.debug("QPAT[" +i +"]:(Inst,Session,GroupLeader,Partition,Flag,Version#) = ("+
+					qpatInfo[i].getInstId()+","+qpatInfo[i].getSessionId()+"," +
+					qpatInfo[i].getGroupLeader()+","+qpatInfo[i].getPartitionId()+"," +
+					qpatInfo[i].getFlags()+","+qpatInfo[i].getVersion());
+		}
 		
 		sessionId = getSessionId(con);
 		instId = getInstId(con);
@@ -649,7 +660,6 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 				//do nothing
 			}	
 		}
-
 	}
     
     private int getSessionId(Connection con) throws SQLException {
@@ -830,7 +840,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         			{
         				if(assignor instanceof TEQAssignor)
         				{
-        					log.debug("TEQAssignor: Using TEQ Assignor. ");
+        					log.debug("Using TEQ Assignor. ");
         					TEQAssignor teqAssignor = (TEQAssignor) assignor;
         					teqAssignor.setInstPListMap(instPListMap);
         					Map<String, ArrayList<SessionData>> topicMemberMap = new HashMap<String,ArrayList<SessionData>>();
@@ -840,27 +850,6 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         				}
         			}
         		}
-            	
-         /*   	for(int ind = 0; ind < length; ind++) {
-            		log.debug("QpatInfo Returned From Join Group " + qpatInfo[ind].toString());
-                	Map<Integer, SessionData> dataBySessionId = sessionData.get(qpatInfo[ind].getSessionId());
-                	if(dataBySessionId == null) {
-                		sessionData.put(qpatInfo[ind].getSessionId(), new HashMap<>());
-                		dataBySessionId = sessionData.get(qpatInfo[ind].getSessionId());
-                	}
-                	// For this Session, check if any entry for this session ?
-                	SessionData data = dataBySessionId.get(qpatInfo[ind].getInstId());
-            	    if(data == null) {
-            	    	data = new SessionData(qpatInfo[ind].getSessionId(), qpatInfo[ind].getInstId(), qpatInfo[ind].getQueueName(),
-                				qpatInfo[ind].getSchema(), qpatInfo[ind].getGroupLeader(), qpatInfo[ind].getVersion(), qpatInfo[ind].getAuditId());
-            	    	//System.out.println("No Previous Entry in map for this QPAT ENtry. Creating new one with Version  " + data.getVersion() );
-            	    	dataBySessionId.put(qpatInfo[ind].getInstId(), data);
-            	    }   
-            	    //System.out.println("Adding new Assigned Partition. Existing partition count:  " + data.getAssignedPartitions()==null?"0":data.getAssignedPartitions().size());
-                	data.setAssignedPartitions(new PartitionData(qpatInfo[ind].getQueueName(), qpatInfo[ind].getQueueId(), qpatInfo[ind].getPartitionId()/2,
-                			qpatInfo[ind].getSubscriberName(), qpatInfo[ind].getSubscriberId(), qpatInfo[ind].getInstId()));
-                	
-                } */
         		if(qpimInfo != null)
         		{
         			for(int ind = 0; ind < qpimInfo.length; ind++) {
@@ -903,31 +892,26 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			final String typeList = "SYS.AQ$_QPAT_INFO_LIST";
 			int size = 0;
 			
-			//System.out.println("SyncGroup 2: SessionData size " +  (sData == null?"0":sData.size()));
-			
 			for(SessionData data : sData) {
-				//System.out.println("SyncGroup 3: SessionData Now :" + data.toString());
-				//System.out.println("SyncGroup 3.1: SessionData Now queueId " + data.getQueueId() + 
-				//		" subscriberId " + data.getSubscriberId());
 				size += data.getAssignedPartitions().size();
-				//System.out.println("SyncGroup 4: This Session Data Size " + data.getAssignedPartitions().size() );
 			}
-			//System.out.println("SyncGroup 5: Before Sync, Assigned Partition List Size " + size);
-			log.info("Before Sync, Assigned Partition List size "+ size);
+			log.debug("Before Sync, Assigned Partition List size "+ size);
 			QPATInfo[] a = new QPATInfo[size];
 			
 			int ind = 0;
 			for(SessionData sessionData : sData) {
 				for(PartitionData pData: sessionData.getAssignedPartitions()) {
-					//System.out.println("SyncGroup 6:  Pdata Now " + pData);
 					
 					QPATInfo qpat = new QPATInfo();
-					qpat.setSchema(sessionData.getSchema() != null ? sessionData.getSchema().toUpperCase() : null);
-					//System.out.println("SyncGroup 7: pData.getTopicPartition() " + pData.getTopicPartition() );
+					qpat.setSchema(sessionData.getSchema() != null ? ConnectionUtils.enquote(sessionData.getSchema().toUpperCase()) : null);
 
-					qpat.setQueueName(pData.getTopicPartition().topic().toUpperCase());
+					qpat.setQueueName(ConnectionUtils.enquote(pData.getTopicPartition().topic().toUpperCase()));
 					qpat.setQueueId(sessionData.getQueueId());
-					qpat.setSubscriberName(pData.getSubName() == null ? configs.getString(ConsumerConfig.GROUP_ID_CONFIG).toUpperCase(): pData.getSubName().toUpperCase());
+					String subscriberNameIn =pData.getSubName() == null ? configs.getString(ConsumerConfig.GROUP_ID_CONFIG).toUpperCase(): pData.getSubName().toUpperCase();
+					if(subscriberNameIn != null) {
+						subscriberNameIn = ConnectionUtils.enquote(subscriberNameIn);
+					}
+					qpat.setSubscriberName(subscriberNameIn);
 					qpat.setSubscriberId(sessionData.getSubscriberId());
 					qpat.setGroupLeader(sessionData.getLeader());
 					int pId = pData.getTopicPartition().partition();
@@ -945,7 +929,6 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					qpat.setTimeStamp(new java.sql.Time(System.currentTimeMillis()));
 					a[ind] = qpat;
 					ind++;
-					//System.out.println("SyncGroup 8: " + qpat.getQueueName() +" id " + qpat.getQueueId() + " subid " + qpat.getSubscriberId());
 				}
 			}
 			
@@ -961,6 +944,17 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			syncStmt.execute();
 			//System.out.println("SyncGroup 9: Retrieved  Response. creating qpatInfo array now");
 			QPATInfo[] qpatInfo = ((QPATInfoList)qpatl.create(syncStmt.getObject(1), 2002)).getArray();
+			
+			log.info("Return from DBMS_TEQK.AQ$_SYNC. QPATINFO Size " +qpatInfo.length );
+			for(int i = 0; i < qpatInfo.length; i++)
+			{
+				
+				log.info("QPAT[" +i +"]:(Inst,Session,GroupLeader,Partition,Flag,Version#) = ("+
+						qpatInfo[i].getInstId()+","+qpatInfo[i].getSessionId()+"," +
+						qpatInfo[i].getGroupLeader()+","+qpatInfo[i].getPartitionId()+"," +
+						qpatInfo[i].getFlags()+","+qpatInfo[i].getVersion());
+			}
+			
             //System.out.println("SyncGroup 10 : Sync Response Received. Assigned Partition count " + qpatInfo.length);
 			return createSyncResponse(request, qpatInfo, syncStmt.getInt(2), null, false);
             } catch(Exception exception) {
@@ -1071,9 +1065,9 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					schemaName = ""; // Oracle DB Server will pick the current schema
 				}
 			}
-			connectMeStmt.setString(1, schemaName);
-			connectMeStmt.setString(2, connMeRequest.getToipcName());
-			connectMeStmt.setString(3, connMeRequest.getGroupId());
+			connectMeStmt.setString(1, ConnectionUtils.enquote(schemaName));
+			connectMeStmt.setString(2, ConnectionUtils.enquote(connMeRequest.getToipcName()));
+			connectMeStmt.setString(3, ConnectionUtils.enquote(connMeRequest.getGroupId()));
 			connectMeStmt.registerOutParameter(4, java.sql.Types.NUMERIC);
 			connectMeStmt.registerOutParameter(5, java.sql.Types.VARCHAR);
 			connectMeStmt.registerOutParameter(6, java.sql.Types.NUMERIC);

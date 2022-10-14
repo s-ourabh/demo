@@ -464,7 +464,6 @@ public final class AQKafkaProducer extends AQClient {
 				log.error("Exception while getting instance id from conneciton " + e, e);
 			}
 			topicPublishers = new HashMap<>();
-
 		}
 		private boolean createPublishers() throws JMSException {
 			conn = createTopicConnection(node);

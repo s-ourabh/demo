@@ -1719,9 +1719,18 @@ public class KafkaAdminClient extends AdminClient {
 	}
 	
 	@Override
-	public DeleteTopicsResult deleteTopics(Collection<String> topicNames, DeleteTopicsOptions options) 
+	public DeleteTopicsResult deleteTopics(Collection<String> topicNames, DeleteTopicsOptions options)
 	{
-		throw new FeatureNotSupportedException("This feature is not suported for this release.");
+		org.oracle.okafka.clients.admin.DeleteTopicsResult delResult = deleteTopics( topicNames, new org.oracle.okafka.clients.admin.DeleteTopicsOptions());
+		KafkaFuture<Void> ftr =  delResult.all();
+		try {
+			ftr.get();
+		}catch(Exception e)
+		{
+			System.out.println("Exception from deleteTopics " + e);
+			e.printStackTrace();
+		}
+		return (DeleteTopicsResult)(new Object());
 	}
 
 	

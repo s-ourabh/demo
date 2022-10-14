@@ -105,7 +105,6 @@ public class ConsumerNetworkClient {
 	private final List<AQjmsBytesMessage> messages = new ArrayList<>();
 	private Node currentSession = null;
 	String consumerGroupId;
-	private String schemaName;
 	
 
 	public ConsumerNetworkClient(
@@ -159,11 +158,18 @@ public class ConsumerNetworkClient {
 				//do nothing;
 			}
 		};
+		log.info("Polling for topics #" + pollMap.entrySet().size());
+		
 		for(Map.Entry<Node, String> poll : pollMap.entrySet()) {	
 			Node node = poll.getKey();
 			log.debug("Fetch Records for topic " + poll.getValue() + " from host " + node );
 			if(!this.client.ready(node, now)) {
 				log.debug("Failed to consume messages from node: {}", node);
+				//ToDo: Retry poll to get new connection to same or different node.
+				if(currentSession  != null && currentSession == node)
+				{
+					currentSession = null;
+				}
 			} else {
 				ClientRequest request  = createFetchRequest(node, poll.getValue(), callback, requestTimeoutMs < timeoutMs ? requestTimeoutMs : (int)timeoutMs);
 				ClientResponse response = client.send(request, now);
@@ -252,7 +258,6 @@ public class ConsumerNetworkClient {
 					metadata.setLeader(currentSession);
 					//cluster.setLeader(currentSession);
 				}
-
 			}
 			return Collections.singletonMap(currentSession, this.subscriptionSnapshot.iterator().next());
 		} catch(java.util.NoSuchElementException exception) {
@@ -361,6 +366,20 @@ public class ConsumerNetworkClient {
 
 	private void handleJoinGroupResponse(ClientResponse response) {
 		JoinGroupResponse jResponse = (JoinGroupResponse)response.responseBody();
+		
+		if(response.wasDisconnected()) {
+			log.info("Join Group failed as connection to database was severed.");
+			client.disconnected(metadata.getNodeById(Integer.parseInt(response.destination())), time.milliseconds()); 
+			rejoin = true;
+			currentSession = null;
+			if(sessionData != null)
+			{
+				log.info("Invalidating database session " + sessionData.name +". New one will get created.");
+				sessionData.invalidSessionData();
+			}
+			return;
+		}
+		
 		//Map<Integer, Map<Integer, SessionData>> sData = jResponse.getSessionData();
 		int leader = jResponse.leader();
 		if(leader == 1) {
@@ -431,6 +450,20 @@ public class ConsumerNetworkClient {
 	private void handleSyncGroupResponse(ClientResponse response) {
 		SyncGroupResponse syncResponse = (SyncGroupResponse)response.responseBody();
 		Exception exception = syncResponse.getException();
+		
+		if(response.wasDisconnected()) {
+			log.info("Join Group failed as connection to database was severed.");
+			client.disconnected(metadata.getNodeById(Integer.parseInt(response.destination())), time.milliseconds()); 
+			rejoin = true;
+			currentSession = null;
+			if(sessionData != null)
+			{
+				log.info("Invalidating database session " + sessionData.name +". New one will get created.");
+				sessionData.invalidSessionData();
+			}
+			return;
+		}
+		
 		if(exception == null) {
 			onJoinComplete(syncResponse.getSessionData());
 			rejoin = false;
@@ -623,7 +656,7 @@ public class ConsumerNetworkClient {
 	public boolean commitOffsetsSync(Map<TopicPartition, OffsetAndMetadata> offsets, long timeout) throws Exception{
 		try {
 		log.info("Sending synchronous commit of offsets: {} request", offsets);	
-		long elapsed = 0;
+		//long elapsed = 0;
 		ClientRequest request;
 		ClientResponse response;
 		//Changes for 2.8.1:: Send leader Node explicitly here
@@ -828,7 +861,7 @@ public class ConsumerNetworkClient {
 		if(autoCommitEnabled) {
 			Map<TopicPartition, OffsetAndMetadata> allConsumedOffsets = subscriptions.allConsumed();
 			try {
-				commitOffsetsSync(subscriptions.allConsumed(), timeoutMs);
+				commitOffsetsSync(allConsumedOffsets, timeoutMs);
 			} catch (Exception exception) {
 				autoCommitException= new KafkaException("failed to commit consumed messages", exception);
 			}

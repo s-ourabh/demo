@@ -164,6 +164,8 @@ public abstract class AQClient {
 			Map<Integer,ArrayList<String>> localListenersMap = new HashMap<>();
 			
 			String security = configs.getString(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG);
+			String preferredService = configs.getString(CommonClientConfigs.ORACLE_SERVICE_NAME);
+			
 			boolean plainText = security.equalsIgnoreCase("PLAINTEXT")?true:false;
 			
 			while(result.next()) {
@@ -178,7 +180,14 @@ public abstract class AQClient {
 						servicesList = new ArrayList<String>();
 						services.put(instId,servicesList);
 					}
-					servicesList.add(value);
+					if(preferredService != null && value.equalsIgnoreCase(preferredService))
+					{
+						log.info("Found Preferred Services " + value);
+						servicesList.add(0, value);
+					}
+					else {
+						servicesList.add(value);
+					}
 				}
 				else if(type.equalsIgnoreCase("LOCAL LISTENER"))
 				{
