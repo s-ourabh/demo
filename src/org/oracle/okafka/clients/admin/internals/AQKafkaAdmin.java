@@ -10,8 +10,10 @@ package org.oracle.okafka.clients.admin.internals;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -249,9 +251,9 @@ public class AQKafkaAdmin extends AQClient{
 	 */
 	@Override
 	public void close() {
-		for(Map.Entry<Node, Connection> connection: connections.entrySet()) {
-			close(connection.getKey());
-		}
+		List<Node> closeNodes = new ArrayList<Node>();
+		closeNodes.addAll(connections.keySet());
+		closeNodes.forEach(n->close(n));
 	}
 	
 	/**

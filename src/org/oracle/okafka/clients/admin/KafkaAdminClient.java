@@ -1727,10 +1727,9 @@ public class KafkaAdminClient extends AdminClient {
 			ftr.get();
 		}catch(Exception e)
 		{
-			System.out.println("Exception from deleteTopics " + e);
-			e.printStackTrace();
+			log.error("Exception from deleteTopics" ,e);
 		}
-		return (DeleteTopicsResult)(new Object());
+		return null;
 	}
 
 	
