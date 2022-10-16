@@ -234,20 +234,20 @@ public final class AQKafkaConsumer extends AQClient{
 		Map<TopicPartition, OffsetAndMetadata> offsets = commitRequest.offsets();
 		Map<Node, Exception> result = new HashMap<>();
 		boolean error = false;
-		log.info("Commit Nodes. " + nodes.size());
+		log.debug("Commit Nodes. " + nodes.size());
 		for(Map.Entry<Node, List<TopicPartition>> node : nodes.entrySet()) {
 			if(node.getValue().size() > 0) {
 				TopicConsumers consumers = topicConsumersMap.get(node.getKey());
 				try {
-					log.info("Committing now for node " + node.toString());
+					log.debug("Committing now for node " + node.toString());
 					TopicSession jmsSession =consumers.getSession();
 					if(jmsSession != null)
 					{
-						log.info("Committing now for node " + node.toString());
+						log.debug("Committing now for node " + node.toString());
 						jmsSession.commit();
-						log.info("Commit done");
+						log.debug("Commit done");
 					}else {
-						log.info("No valid session for node " + node);
+						log.info("No valid session to commit for node " + node);
 					}
 					result.put(node.getKey(), null);
 				
@@ -583,13 +583,15 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		int ind = 0;
 		for(PartitionData pData: sessionData.getAssignedPartitions()) {
 			QPATInfo qpat = new QPATInfo();
-			qpat.setSchema(sessionData.getSchema() != null ? ConnectionUtils.enquote(sessionData.getSchema().toUpperCase()) : null);
-			qpat.setQueueName(ConnectionUtils.enquote(pData.getTopicPartition().topic().toUpperCase()));
+			//qpat.setSchema(sessionData.getSchema() != null ? ConnectionUtils.enquote(sessionData.getSchema().toUpperCase()) : null);
+			qpat.setSchema(sessionData.getSchema() != null ? (sessionData.getSchema().toUpperCase()) : null);
+			//qpat.setQueueName(ConnectionUtils.enquote(pData.getTopicPartition().topic().toUpperCase()));
+			qpat.setQueueName((pData.getTopicPartition().topic().toUpperCase()));
 			qpat.setQueueId(pData.getQueueId());
 			String subscriberNameIn =pData.getSubName() == null ? configs.getString(ConsumerConfig.GROUP_ID_CONFIG).toUpperCase(): pData.getSubName().toUpperCase();
-			if(subscriberNameIn != null) {
+			/*if(subscriberNameIn != null) {
 				subscriberNameIn = ConnectionUtils.enquote(subscriberNameIn);
-			}
+			}*/
 			qpat.setSubscriberName(subscriberNameIn);
 			qpat.setSubscriberId(pData.getSubId());
 			qpat.setGroupLeader(sessionData.getLeader());
@@ -866,7 +868,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         	leader = -1;
         }
         JoinGroupResponse jgResponse = new JoinGroupResponse(memberPartitionMap, partitions, leader, version, exception);
-        log.info("Join Group Response Created");
+        log.debug("Join Group Response Created");
         return new ClientResponse(request.makeHeader((short)1), request.callback(), request.destination(), 
                 request.createdTimeMs(), time.milliseconds(), disconnected, null,null, jgResponse);
     }
@@ -903,14 +905,16 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 				for(PartitionData pData: sessionData.getAssignedPartitions()) {
 					
 					QPATInfo qpat = new QPATInfo();
-					qpat.setSchema(sessionData.getSchema() != null ? ConnectionUtils.enquote(sessionData.getSchema().toUpperCase()) : null);
+					//qpat.setSchema(sessionData.getSchema() != null ? ConnectionUtils.enquote(sessionData.getSchema().toUpperCase()) : null);
+					qpat.setSchema(sessionData.getSchema() != null ? (sessionData.getSchema().toUpperCase()) : null);
 
-					qpat.setQueueName(ConnectionUtils.enquote(pData.getTopicPartition().topic().toUpperCase()));
+					//qpat.setQueueName(ConnectionUtils.enquote(pData.getTopicPartition().topic().toUpperCase()));
+					qpat.setQueueName((pData.getTopicPartition().topic().toUpperCase()));
 					qpat.setQueueId(sessionData.getQueueId());
 					String subscriberNameIn =pData.getSubName() == null ? configs.getString(ConsumerConfig.GROUP_ID_CONFIG).toUpperCase(): pData.getSubName().toUpperCase();
-					if(subscriberNameIn != null) {
+					/*if(subscriberNameIn != null) {
 						subscriberNameIn = ConnectionUtils.enquote(subscriberNameIn);
-					}
+					}*/
 					qpat.setSubscriberName(subscriberNameIn);
 					qpat.setSubscriberId(sessionData.getSubscriberId());
 					qpat.setGroupLeader(sessionData.getLeader());
@@ -945,11 +949,11 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			//System.out.println("SyncGroup 9: Retrieved  Response. creating qpatInfo array now");
 			QPATInfo[] qpatInfo = ((QPATInfoList)qpatl.create(syncStmt.getObject(1), 2002)).getArray();
 			
-			log.info("Return from DBMS_TEQK.AQ$_SYNC. QPATINFO Size " +qpatInfo.length );
+			log.debug("Return from DBMS_TEQK.AQ$_SYNC. QPATINFO Size " +qpatInfo.length );
 			for(int i = 0; i < qpatInfo.length; i++)
 			{
 				
-				log.info("QPAT[" +i +"]:(Inst,Session,GroupLeader,Partition,Flag,Version#) = ("+
+				log.debug("QPAT[" +i +"]:(Inst,Session,GroupLeader,Partition,Flag,Version#) = ("+
 						qpatInfo[i].getInstId()+","+qpatInfo[i].getSessionId()+"," +
 						qpatInfo[i].getGroupLeader()+","+qpatInfo[i].getPartitionId()+"," +
 						qpatInfo[i].getFlags()+","+qpatInfo[i].getVersion());
@@ -1277,7 +1281,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         			String serialNum = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERIAL_NUM");
         			String serverPid = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERVER_PID");
         		
-        			log.info("Database Consumer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid);
+        			log.info("Database Consumer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid +" Instance Name "+ instanceName);
         		}catch(Exception e)
         		{
         			

@@ -371,7 +371,7 @@ public class NetworkClient implements KafkaClient {
 	private void sendInternalMetadataRequest(MetadataRequest.Builder builder, Node node, long now) {
 		ClientRequest clientRequest = newClientRequest(node, builder, now, true);
 		ClientResponse response = doSend(clientRequest, true, now);
-		log.info("Got response for metadata request {} from node {}", builder, node);
+		log.debug("Got response for metadata request {} from node {}", builder, node);
 		((DefaultMetadataUpdater)metadataUpdater).handleCompletedMetadataResponse(
 				response.requestHeader(), time.milliseconds(), (MetadataResponse)response.responseBody());
 	}
@@ -523,7 +523,7 @@ public class NetworkClient implements KafkaClient {
 			aqClient.connect(node);
 			this.connectionStates.connecting(node, now);
 			this.connectionStates.ready(node);
-			log.info("Connection is established to node {}", node);
+			log.debug("Connection is established to node {}", node);
 		} catch(Exception e) { 
 			if(e instanceof JMSException) {
 				JMSException jmsExcp = (JMSException)e;
@@ -724,7 +724,7 @@ public class NetworkClient implements KafkaClient {
 			else           	
 				metadataRequest = new MetadataRequest.Builder(new ArrayList<>(metadata.topics()),
 						metadata.allowAutoTopicCreation());
-			log.info("Sending metadata request {} to node {}", metadataRequest, node);
+			log.debug("Sending metadata request {} to node {}", metadataRequest, node);
 			sendInternalMetadataRequest(metadataRequest, node, now);
 			return defaultRequestTimeoutMs;
 		}

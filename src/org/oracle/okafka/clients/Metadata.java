@@ -327,15 +327,15 @@ public final class Metadata implements Closeable {
 
 		Node oldLeader = getLeader(this.version-1);
 		if(oldLeader != null)
-			log.info("Update Metadata: OldLeaderNode as of version"+(this.version-1)+": " + oldLeader);
+			log.debug("Update Metadata: OldLeaderNode as of version"+(this.version-1)+": " + oldLeader);
 		else
-			log.info("Update Metadata: No old leader as of now for cluster " + 
+			log.debug("Update Metadata: No old leader as of now for cluster " + 
 					cluster.clusterResource().clusterId() + " for version " + (this.version-1));
 		
 		if(oldLeader == null)
 		{
 			oldLeader = (org.oracle.okafka.common.Node)oldCluster.controller();
-			log.info("Update Metadata: Checking with cluster Controller node " + oldLeader);
+			log.debug("Update Metadata: Checking with cluster Controller node " + oldLeader);
 		}
 
 		if(oldLeader == null)
@@ -403,7 +403,7 @@ public final class Metadata implements Closeable {
     		    New leader will be found eventually. */
 			newNodeList.remove(bestSoFar);
 			newNodeList.add(0,bestSoFar);
-			log.info("Update Metadata: New Leader to be chosen. Potential candidate " + bestSoFar);
+			log.debug("Update Metadata: New Leader to be chosen. Potential candidate " + bestSoFar);
 		}
 		return null;
 	}

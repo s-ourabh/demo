@@ -75,10 +75,10 @@ public final class AQKafkaProducer extends AQClient {
 	public void connect(Node node) throws JMSException {
 		TopicPublishers nodePublishers = null;
 		try {
-			log.info("Creating new connection for node " + node);
+			log.debug("Creating new connection for node " + node);
 			nodePublishers = new TopicPublishers(node);
 			topicPublishersMap.put(node, nodePublishers);
-			log.info("CONNECTED NODES: "+topicPublishersMap.keySet());
+			log.debug("CONNECTED NODES: "+topicPublishersMap.keySet());
 		}catch(JMSException e) {
 			close(node, nodePublishers);
 			throw e;
@@ -226,7 +226,7 @@ public final class AQKafkaProducer extends AQClient {
 	 */
 	private void sendToAQ(AQjmsBytesMessage[] messages, TopicPublisher publisher) throws JMSException {
 		//Sends messages in bulk using topic publisher;
-		log.info("In BulkSend: #messages = " + messages.length);
+		log.debug("In BulkSend: #messages = " + messages.length);
 		((AQjmsProducer)publisher).bulkSend(publisher.getTopic(), messages);
 	}
 
@@ -446,7 +446,7 @@ public final class AQKafkaProducer extends AQClient {
         			String serialNum = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERIAL_NUM");
         			String serverPid = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERVER_PID");
         		
-        			log.info("Database Producer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid);
+        			log.info("Database Producer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid +" Instance Name "+instanceName);
         		}catch(Exception ignoreE)
         		{
         		}

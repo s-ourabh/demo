@@ -60,7 +60,7 @@ public abstract class AQClient {
 	
 	public ClientResponse getMetadataNow(ClientRequest request, Connection con) {
 		
-		log.info("Getting Metadata now");
+		log.debug("Getting Metadata now");
 		
 		MetadataRequest.Builder builder= (MetadataRequest.Builder)request.requestBuilder();
 		MetadataRequest metadataRequest = builder.build();	

@@ -158,7 +158,7 @@ public class ConsumerNetworkClient {
 				//do nothing;
 			}
 		};
-		log.info("Polling for topics #" + pollMap.entrySet().size());
+		log.debug("Polling for topics #" + pollMap.entrySet().size());
 		
 		for(Map.Entry<Node, String> poll : pollMap.entrySet()) {	
 			Node node = poll.getKey();
@@ -320,7 +320,7 @@ public class ConsumerNetworkClient {
 	private boolean rejoinNeeded(Exception exception ) {
 		if (exception != null && exception instanceof JMSException) {
 			if( ((JMSException)exception).getLinkedException().getMessage().startsWith("ORA-24003") ) {
-				log.info("Join Group is needed");
+				log.debug("Join Group is needed");
 				return true;				
 			}
 		}
@@ -333,7 +333,7 @@ public class ConsumerNetworkClient {
 
 		// execute the user's callback before rebalance
 		ConsumerRebalanceListener listener = subscriptions.rebalanceListener();
-		log.info("Revoking previously assigned partitions {}", subscriptions.assignedPartitions());
+		log.debug("Revoking previously assigned partitions {}", subscriptions.assignedPartitions());
 		try {
 			Set<TopicPartition> revoked = new HashSet<>(subscriptions.assignedPartitions());
 			listener.onPartitionsRevoked(revoked);
@@ -357,11 +357,11 @@ public class ConsumerNetworkClient {
 		}
 		long now = time.milliseconds();
 		ClientRequest request = this.client.newClientRequest(node, new JoinGroupRequest.Builder(sessionData), now, true);
-		log.info("Sending JoinGroup Request");
+		log.debug("Sending JoinGroup Request");
 		ClientResponse response = this.client.send(request, now);  // Invokes  AQKafkaConsumer.joinGroup
-		log.info("Got JoinGroup Response, Handling Join Group Response");
+		log.debug("Got JoinGroup Response, Handling Join Group Response");
 		handleJoinGroupResponse(response);
-		log.info("Handled JoinGroup Response");
+		log.debug("Handled JoinGroup Response");
 	}
 
 	private void handleJoinGroupResponse(ClientResponse response) {
@@ -655,7 +655,7 @@ public class ConsumerNetworkClient {
 
 	public boolean commitOffsetsSync(Map<TopicPartition, OffsetAndMetadata> offsets, long timeout) throws Exception{
 		try {
-		log.info("Sending synchronous commit of offsets: {} request", offsets);	
+		log.debug("Sending synchronous commit of offsets: {} request", offsets);	
 		//long elapsed = 0;
 		ClientRequest request;
 		ClientResponse response;
@@ -664,7 +664,7 @@ public class ConsumerNetworkClient {
 		Map<Node, List<TopicPartition>> commitableNodes = getCommitableNodes(offsets);
 		if(commitableNodes == null || commitableNodes.size() == 0)
 		{
-			log.info("No offsets to commit. Return");
+			log.debug("No offsets to commit. Return");
 			return true;
 		}
 		request = this.client.newClientRequest(metadata.getLeader(), new CommitRequest.Builder(commitableNodes, offsets), time.milliseconds(), true);
@@ -876,9 +876,9 @@ public class ConsumerNetworkClient {
 	{
 		long now = time.milliseconds();
 		ClientRequest request = this.client.newClientRequest(currentNode, new ConnectMeRequest.Builder(schema,topic,groupId), now, true);
-		log.info("Sending ConnectMe Request");
+		log.debug("Sending ConnectMe Request");
 		ClientResponse response = this.client.send(request, now);  // Invokes  DBMS_TEQK.AQ$_CONNECT_ME
-		log.info("Got JoinGroup Response, Handling Join Group Response");
+		log.debug("Got ConnectMe response");
 		ConnectMeResponse connMeResponse = (ConnectMeResponse)response.responseBody();
 		return connMeResponse.getPreferredNode();
 	}
