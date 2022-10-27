@@ -117,31 +117,24 @@ import org.slf4j.Logger;
 
 /**
  * Note: Topic name has to be in uppercase wherever used.
- * A Java client that consumes records from a Transactional event queues.
- * The consumer maintains a single jms session to any one of the available instance of oracle database to fetch data.
+ * A Java client that consumes records from a Transactional event queues(TxEventQ).
+ * The consumer maintains a single jms session to any one of the available instances of oracle database to fetch consmer records.
  * Failure to close the consumer after use will leak this connection.
  *
  * <h3><a name="consumergroups">Consumer Groups and Topic Subscriptions</a></h3>
  *
- * TEQ uses the concept of <i>consumer groups</i> to allow a pool of processes to divide the work of consuming and
- * processing records. These processes can either be running on the same machine or they can be
+ * TxEventQ supports Apache Kafka's concept of <i>consumer groups</i> which allow a pool of processes to divide the work of consuming and
+ * processing records and thus facilitating load balancing. These processes can either be running on the same machine or they can be
  * distributed over many machines to provide scalability and fault tolerance for processing. All consumer instances
  * sharing the same {@code group.id} will be part of the same consumer group.
- * <p>
- * In consumer group there can be multiple consumer instances. Each instance internally holds single connection and session to TEQ.
- * In 20c release or version 0.8 of OKafka.jar file, each consumer instance/session is assigned a single partition (or a single stream) of 
- * of subscribed topic. Client application has to start as many consumer instances as number of partitions of the topic.
- * If consumer instance goes down , messages from assigned partition are not dequeued untill new/same consumer instance comes up. 
- * However other instances continue consuming fron their assigned partition whether consumer instance goes up or down i.e. there is no consumer rebalancing in any situation. 
- * If oracle db instance goes down, consumer instance tries connecting to same oracle db instance and consumes from newly assigned partition.
- * <p>
+ * 
  * A Consumer can subscribe to single topic using {@link #subscribe(Collection) subscribe}. Consumer throws an exception if topic subscription collection size is greater than one.
  * Also consumers can't subscribe using {@link #subscribe(Pattern) subscribe(Pattern)}, {@link #subscribe(Pattern, ConsumerRebalanceListener) subscribe(Pattern, ConsumerRebalanceListener)},
  * {@link #subscribe(Collection, ConsumerRebalanceListener) subscribe(Collection, ConsumerRebalanceListener)}.
  * 
  * <h3>Offsets and Consumer Position</h3>
- * TEQ maintains a string message id for each record in a partition .This id is equivalent to kafka offset. This offset or
- * msg id acts as a unique identifier of a record within that partition, and also denotes the position of the consumer 
+ * TxEventQ maintains a string message id for each record in a partition .This id is equivalent to kafka offset. This offset or
+ * message id acts as a unique identifier of a record within that partition, and also denotes the position of the consumer 
  * in the partition. The position of consumer depends on {@link #commitSync() committed position}. This is the last offset that has been stored securely. Should the
  * process starts or fail and restart , this is the offset that the consumer will recover to. The consumer can either automatically commit
  * offsets periodically; or it can choose to control this committed position manually by calling one of the commit APIs
@@ -154,11 +147,9 @@ import org.slf4j.Logger;
  * <pre>
  * {@code
  *     Properties props = new Properties();
- *     props.put("oracle.service.name", "serviceid.regress.rdbms.dev.us.oracle.com");	    	     
- *     props.put("oracle.instance.name", "instancename");
- * 	   props.put("oracle.user.name", "username");
- * 	   props.put("oracle.password", "pwd");
- *	   props.put("bootstrap.servers", "IP:PORT");
+ *     props.put("bootstrap.servers", "IP:PORT");
+ *     props.put("oracle.service.name", "serviceid.regress.rdbms.dev.us.oracle.com");
+ *     props.put("oracle.net.tns_admin","."); // Location of ojdbc.properties file which contains database username and password	    	     
  *     props.put("group.id", "groupid");
  *     props.put("enable.auto.commit", "true");
  *     props.put("auto.commit.interval.ms", "10000");
@@ -185,7 +176,7 @@ import org.slf4j.Logger;
  *}
  * </pre>
  *
- * The connection to the cluster is bootstrapped by specifying a one broker to contact using the
+ * The connection to the Oracle Database cluster is bootstrapped by specifying a one Oracle Cluster node to contact using the
  * configuration {@code bootstrap.servers}. 
  * <p>
  * Setting {@code enable.auto.commit} means that offsets are committed automatically with a frequency controlled by

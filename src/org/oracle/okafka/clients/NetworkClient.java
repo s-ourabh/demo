@@ -481,6 +481,13 @@ public class NetworkClient implements KafkaClient {
 				{
 					log.info("Reconnect successful to node " + node);
 					found = node;
+				}else {
+					try 
+					{
+						//Cannot connect to Oracle Database. Retry after reconnectBackoffMs seconds
+						Thread.sleep(reconnectBackoffMs);
+					} 
+					catch(Exception ignoreE) {}
 				}
 			}
 			//If no known node is reachable, try without instnace_name. This is needed in case 

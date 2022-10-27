@@ -61,6 +61,10 @@ public class MessageIdConverter {
 	}
 
 	public static OKafkaOffset getOKafkaOffset(String msgId, boolean getPartId, boolean getSubPartId) {
+		
+		/* if(msgId == null)
+			return  new OKafkaOffset(-1, -1, -1); */
+		
 		if(msgId.length() != 35) 
 			throw new InvalidMessageIdException("Length of message Id  is not 35");
 		try {
