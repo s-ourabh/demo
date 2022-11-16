@@ -481,13 +481,19 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			
 			try {
 				((AQjmsSession)topicConsumersByNode.getValue().getSession()).close();
+				((AQjmsConnection)topicConsumersByNode.getValue().getConnection()).close();
 				topicConsumersByNode.getValue().setSession(null);
+				topicConsumersByNode.getValue().setConnection(null);
+				// ToDo: Delete User_queue_partition_assignment_table entry for   this Consumer Session from Database
+				// Execute DBMS_TEQK.AQ$_REMOVE_SESSION()
+				topicConsumersMap.clear();
+				
 			} catch(JMSException jms) {
 				//log.error("Failed to close session: {} associated with connection: {} and node: {}  ", consumers.getSession(), topicConsumersMap.getConnection(), node );
 			}
 		}
 		return new ClientResponse(request.makeHeader((short)1), request.callback(), request.destination(), 
-                request.createdTimeMs(), time.milliseconds(), false,null,null, new UnsubscribeResponse(response));
+                request.createdTimeMs(), time.milliseconds(), true,null,null, new UnsubscribeResponse(response));
 	}
 	
 	private ClientResponse getMetadata(ClientRequest request) {

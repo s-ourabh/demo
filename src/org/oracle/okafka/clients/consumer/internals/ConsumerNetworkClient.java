@@ -819,16 +819,29 @@ public class ConsumerNetworkClient {
 	} 
 
 	public void unsubscribe() {
-		ClientRequest request = this.client.newClientRequest(null, new UnsubscribeRequest.Builder(), time.milliseconds(), true);
+		ClientRequest request = this.client.newClientRequest(currentSession, new UnsubscribeRequest.Builder(), time.milliseconds(), true);
 		ClientResponse response = this.client.send(request, time.milliseconds());
 		handleUnsubscribeResponse(response);
 
 	}
 
 	private void handleUnsubscribeResponse(ClientResponse response) {
+
+		if(response.wasDisconnected()) {
+			log.info("handleUnsubscribeResponse : node in disconnected state\n");
+			client.disconnected(metadata.getNodeById(Integer.parseInt(response.destination())), time.milliseconds()); 
+			rejoin = true;
+			currentSession = null;
+			if(sessionData != null)
+			{
+				log.info("handleUnsubscribeResponse : Invalidating database session " + sessionData.name +". New one will get created.\n");
+				sessionData.invalidSessionData();
+			}
+			return;
+		}
 		UnsubscribeResponse  unsubResponse = (UnsubscribeResponse)response.responseBody();
 		for(Map.Entry<String, Exception> responseByTopic: unsubResponse.response().entrySet()) {
-			if(responseByTopic.getValue() == null)
+			if(responseByTopic.getValue() != null)
 				log.trace("Failed to unsubscribe from topic: with exception: ", responseByTopic.getKey(), responseByTopic.getValue());
 			else
 				log.trace("Unsubscribed from topic: ", responseByTopic.getKey());
