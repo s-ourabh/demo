@@ -348,7 +348,7 @@ public class SubscriptionState {
      * @return The union of all subscribed topics in the group if this member is the leader
      *   of the current generation; otherwise it returns the same set as {@link #subscription()}
      */
-    synchronized Set<String> metadataTopics() {
+    public synchronized Set<String> metadataTopics() {
         if (groupSubscription.isEmpty())
             return subscription;
         else if (groupSubscription.containsAll(subscription))

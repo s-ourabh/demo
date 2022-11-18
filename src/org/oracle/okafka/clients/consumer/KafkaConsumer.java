@@ -568,6 +568,12 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 					if (topic == null || topic.trim().isEmpty())
 						throw new IllegalArgumentException("Topic collection to subscribe to cannot contain null or empty topic");
 				}
+				//Only one topic can be subscribed, unsubcribe to previous topics before subscribing to new topic 
+				Set<String> Alltopics = subscriptions.metadataTopics();
+				if(Alltopics.size() > 0) {
+		    		this.unsubscribe();
+		    	}
+				
 				log.debug("Subscribed to topic(s): {}", Utils.join(topics, ", "));
 				Set<String> subscribedTopicSet = new HashSet<>(topics);
 				this.subscriptions.subscribe(subscribedTopicSet, listener);
