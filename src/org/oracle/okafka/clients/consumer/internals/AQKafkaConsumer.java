@@ -1075,9 +1075,9 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					schemaName = ""; // Oracle DB Server will pick the current schema
 				}
 			}
-			connectMeStmt.setString(1, ConnectionUtils.enquote(schemaName));
-			connectMeStmt.setString(2, ConnectionUtils.enquote(connMeRequest.getToipcName()));
-			connectMeStmt.setString(3, ConnectionUtils.enquote(connMeRequest.getGroupId()));
+			connectMeStmt.setString(1, schemaName);
+			connectMeStmt.setString(2, connMeRequest.getToipcName());
+			connectMeStmt.setString(3, connMeRequest.getGroupId());
 			connectMeStmt.registerOutParameter(4, java.sql.Types.NUMERIC);
 			connectMeStmt.registerOutParameter(5, java.sql.Types.VARCHAR);
 			connectMeStmt.registerOutParameter(6, java.sql.Types.NUMERIC);
