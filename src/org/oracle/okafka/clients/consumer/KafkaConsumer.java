@@ -502,7 +502,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 					maxPollIntervalMs,
 					this.requestTimeoutMs,
 					sessionTimeoutMs,
-					defaultApiTimeoutMs);
+					defaultApiTimeoutMs,
+					aqConsumer);
 
 
 			config.logUnused();
@@ -719,16 +720,26 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 				final long metadataEnd;
 				if(includeMetadataInTimeout) {
 					final long metadataStart = time.milliseconds();
-					if (!updateMetadataAndSubscribeIfNeeded(timer.remainingMs())) {
-						return ConsumerRecords.empty();
+					try {
+						if (!updateMetadataAndSubscribeIfNeeded(timer.remainingMs())) {
+							return ConsumerRecords.empty();
+						}
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
 					timer.update(time.milliseconds());
 					metadataEnd = time.milliseconds();
 					elapsedTime += metadataEnd - metadataStart; 
 
 				} else {
-					while(!updateMetadataAndSubscribeIfNeeded(Long.MAX_VALUE)) {
-						log.warn("Still waiting for metadata");
+					try {
+						while(!updateMetadataAndSubscribeIfNeeded(Long.MAX_VALUE)) {
+							log.warn("Still waiting for metadata");
+						}
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
 					metadataEnd = time.milliseconds();
 					timer.update(time.milliseconds());
@@ -761,7 +772,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		}
 	}
 
-	private boolean updateMetadataAndSubscribeIfNeeded(long timeout)  {
+	private boolean updateMetadataAndSubscribeIfNeeded(long timeout) throws Exception  {
 		long elapsed = 0L;
 		long subscriptionStart = time.milliseconds();
 		client.maybeUpdateMetadata(timeout);

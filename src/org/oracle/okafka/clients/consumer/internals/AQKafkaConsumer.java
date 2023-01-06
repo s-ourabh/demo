@@ -316,7 +316,7 @@ public final class AQKafkaConsumer extends AQClient{
     	int seekType;
     	String seekMsgId;
     	public SeekInput() {
-    		priority = 1;
+    		priority = 4;
     	}
     }
     
@@ -366,6 +366,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			
 			SeekInput[] seekInputs = null;
 			String[] inArgs = new String[5];
+			int indx =0;
 			for(Map.Entry<String, Map<TopicPartition, Long>> offsetResetTimestampOfTopic : offsetResetTimeStampByTopic.entrySet()) {
 				String topic =  offsetResetTimestampOfTopic.getKey();
 				inArgs[0] = "Topic: " + topic + " ";
@@ -376,7 +377,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 
 					int inputSize = offsetResetTimestampOfTopic.getValue().entrySet().size(); 
 					seekInputs = new SeekInput[inputSize];
-					int indx =0;
+					
 					for(Map.Entry<TopicPartition, Long> offsets : offsetResetTimestampOfTopic.getValue().entrySet()) {
 						seekInputs[indx] = new SeekInput(); 
 						try {
@@ -399,6 +400,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 								inArgs[4] = "Seek To MsgId: "+seekInputs[indx].seekMsgId ;
 								validateMsgId(seekInputs[indx].seekMsgId);
 							}
+							indx++;
 						}catch(IllegalArgumentException e ) {
 							String errorMsg = "";
 							for(int i =0; i<inArgs.length; i++ ) {
@@ -431,7 +433,13 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					seekStmt.setString(stmtIndx++, configs.getString(ConsumerConfig.GROUP_ID_CONFIG));
 					
 					for(int i=0; i < seekInputs.length; i++) {
-						seekStmt.setInt(stmtIndx++, seekInputs[i].partition);
+						if(seekInputs[i].partition == -1) {
+						  seekStmt.setInt(stmtIndx++, seekInputs[i].partition);
+						}
+						else {
+							seekStmt.setInt(stmtIndx++, 2*seekInputs[i].partition);
+						}
+						
 						seekStmt.setInt(stmtIndx++, seekInputs[i].priority);
 						seekStmt.setInt(stmtIndx++, seekInputs[i].seekType);
 						if(seekInputs[i].seekType == SeekInput.SEEK_MSGID){
@@ -442,7 +450,11 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					}
 					seekStmt.setInt(stmtIndx++, SeekInput.DISCARD_SKIPPED);
 					seekStmt.execute();
-			
+			        
+					for(Map.Entry<TopicPartition, Long> offsets : offsetResetTimestampOfTopic.getValue().entrySet()) {
+						responses.put(offsets.getKey(), null);
+					}
+					
 				} catch(Exception e) {
 					for(Map.Entry<TopicPartition, Long> offsets : offsetResetTimestampOfTopic.getValue().entrySet()) {
 						responses.put(offsets.getKey(), e);
@@ -748,6 +760,51 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
     	
     }
 
+    
+    public int getSubcriberCount(Node node, String topic) throws SQLException {
+		int count =0;
+		PreparedStatement Stmt = null;
+    	ResultSet rs = null;
+    	Connection con;
+    	try {
+    		  con = ((AQjmsSession)topicConsumersMap.get(node).getSession()).getDBConnection();
+			  String query = "select count(*) from  user_durable_subs where name = :1 and queue_name = :2";
+			  Stmt = con.prepareStatement(query);
+			  Stmt.setString(1, configs.getString(ConsumerConfig.GROUP_ID_CONFIG));
+			  Stmt.setString(2, topic);
+			  rs = Stmt.executeQuery();
+					
+			  if(rs.next()) {
+				count = rs.getInt(1);
+				return count;
+			  }
+    	}catch(SQLException sqlException) {
+    		//do nothing
+    	} catch (JMSException e) {
+			//do nothing
+		} finally {
+    		try {
+    			if(rs != null)
+        			rs.close();
+    		}catch(SQLException exception) {
+    			
+    		}
+    		try {
+    			if(Stmt != null)
+        			Stmt.close();
+    		}catch(SQLException exception) {
+    			
+    		}
+    		
+    	}
+    	
+    	throw new SQLException("Error in getting the subscriber count");
+    }
+    
+    public String getoffsetStartegy() {
+		return configs.getString(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG);
+	}
+    
     /* Returns a list of sessions that are part of rebalancing and their previous assignment */
     private ClientResponse createJoinGroupResponse(ClientRequest request, int sessionId, int instId, QPATInfo[] qpatInfo, QPIMInfo[] qpimInfo, int version, Exception exception, boolean disconnected) {
     	
@@ -1205,6 +1262,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 	}
 	
 	public ClientResponse subscribe(ClientRequest request) {
+		
 		for(Map.Entry<Node, TopicConsumers> topicConsumersByNode: topicConsumersMap.entrySet())
 		{
 			for(Map.Entry<String, TopicSubscriber> topicSubscriber : topicConsumersByNode.getValue().getTopicSubscriberMap().entrySet()) {
