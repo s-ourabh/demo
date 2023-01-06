@@ -845,7 +845,18 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 			if(tp != null && partition != -1) {
 				//Changes for 2.8.1
 				try {
-					subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+				}
+				catch(IllegalStateException iSE)
+				{
+					if(metadata.getDBMajorVersion() < 23)
+					{
+						// Partition assigned by TEQ Server not through JoinGroup/Sync
+						subscriptions.assignFromSubscribed( Collections.singleton(tp));
+						subscriptions.seek(tp,0);
+						subscriptions.completeValidation(tp);
+						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+					}
 				}
 				catch(Exception e)
 				{

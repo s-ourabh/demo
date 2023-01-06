@@ -11,6 +11,9 @@ import java.io.File;
 import java.io.FileReader;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.ResultSet;
+
+import java.sql.PreparedStatement;
 import java.util.Properties;
 
 import javax.jms.JMSException;
@@ -132,5 +135,32 @@ public class ConnectionUtils {
 		}
 	    throw new IllegalArgumentException("Invalid argument provided: " + name);	
 	}
+    
+    public static String getDBVersion(Connection conn) throws Exception
+    {
+    	String dbVersionQuery = "select version_full from PRODUCT_COMPONENT_VERSION where product like  'Oracle Database%'";
+    	String dbVersionStr = "";
+    	PreparedStatement dbVerStmt =  null;
+    	ResultSet rs = null;
+    	try {
+    		dbVerStmt = conn.prepareStatement(dbVersionQuery);
+    		dbVerStmt.execute();
+    		rs = dbVerStmt.getResultSet();
+    		if(rs.next()) {
+    			dbVersionStr = rs.getString(1);
+    		}
+    	}catch(Exception e)
+    	{
+    		throw e;
+    	}
+    	finally {
+    		if(rs != null)
+    			rs.close();
+    		
+    		if(dbVerStmt != null)
+    			dbVerStmt.close();
+    	}
+    	return dbVersionStr;
+    }
 
 }

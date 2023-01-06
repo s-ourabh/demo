@@ -1201,7 +1201,6 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			consumers = new TopicConsumers(node, mode);
 			topicConsumersMap.put(node, consumers);
 		}
-		
 	}
 	
 	public ClientResponse subscribe(ClientRequest request) {
@@ -1240,6 +1239,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			}
 			TopicConsumers consumers = topicConsumersMap.get(node);	
 			consumers.getTopicSubscriber(topic);
+			metadata.setDBVersion(consumers.getDBVersion());
 		} catch(JMSException exception) { 
 			log.error("Exception during Subscribe request " + exception, exception);
 			log.info("Exception during Subscribe request. " + exception);
@@ -1247,9 +1247,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			close(node);
 			return createSubscribeResponse(request, topic, exception, false);
 		}
-		
 		return createSubscribeResponse(request, topic, null, false);
-		
 	}
 	
 	private ClientResponse createSubscribeResponse(ClientRequest request, String topic, JMSException exception, boolean disconnected) {
@@ -1267,7 +1265,9 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		private TopicConnection conn = null;
 		private TopicSession sess = null;
 		private Map<String, TopicSubscriber> topicSubscribers = null;
-		private final Node node ;
+		private final Node node;
+		private String dbVersion;
+		 
 		public TopicConsumers(Node node) throws JMSException {
 			this(node, TopicSession.AUTO_ACKNOWLEDGE);
 		}
@@ -1288,9 +1288,17 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         			String serverPid = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERVER_PID");
         		
         			log.info("Database Consumer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid +" Instance Name "+ instanceName);
+        			
+        			try {
+                		this.dbVersion = ConnectionUtils.getDBVersion(oConn);
+                	}catch(Exception e)
+                	{
+                		log.error("Exception whle fetching DB Version " + e,e);
+                	}
+        			
         		}catch(Exception e)
         		{
-        			
+        			log.error("Exception while fetching database session information " + e);
         		}
 
         		node.setId(instId);
@@ -1375,6 +1383,11 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		
 		public void remove(String topic) {
 			topicSubscribers.remove(topic);
+		}
+		
+		public String getDBVersion()
+		{
+			return dbVersion;
 		}
 		
 	}
