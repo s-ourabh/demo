@@ -396,8 +396,8 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 								seekInputs[indx].seekType = SeekInput.SEEK_MSGID; // Seek to MessageId
 								inArgs[2]= "Seek Type: " + seekInputs[indx].seekType;
 								inArgs[3] ="Seek to Offset: " +  offsets.getValue();
-								seekInputs[indx].seekMsgId = MessageIdConverter.getMsgId(tp, offsets.getValue(), msgIdFormat);
-								inArgs[4] = "Seek To MsgId: "+seekInputs[indx].seekMsgId ;
+								seekInputs[indx].seekMsgId = MessageIdConverter.getMsgId(tp, offsets.getValue(), msgIdFormat, seekInputs[indx].priority);
+							    inArgs[4] = "Seek To MsgId: "+seekInputs[indx].seekMsgId ;
 								validateMsgId(seekInputs[indx].seekMsgId);
 							}
 							indx++;
@@ -459,7 +459,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					for(Map.Entry<TopicPartition, Long> offsets : offsetResetTimestampOfTopic.getValue().entrySet()) {
 						responses.put(offsets.getKey(), e);
 					}
-			    }finally {
+				}finally {
 			    	if(seekStmt != null) {
 			    		try { 
 			    			seekStmt.close();

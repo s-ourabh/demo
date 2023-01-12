@@ -1008,7 +1008,10 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		acquireAndEnsureOpen();
 		try {
 			log.debug("Seeking to offset {} for partition {}", offset, partition);
-			this.subscriptions.seek(partition, offset);
+		    Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>();
+			offsetResetTimestamps.put(partition, offset);
+			client.resetOffsetsSync(offsetResetTimestamps, offset);
+			
 		} finally {
 			release();
 		}
@@ -1326,7 +1329,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		/*Changes for 2.8.1 : Not sure from where TO_OFFSET was introduced. 
         else if (strategy == OffsetResetStrategy.TO_OFFSET)
         	return subscriptions.position(partition);
-		 */
+         */ 
 		else
 			return null;
 	}
