@@ -726,7 +726,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 						}
 					} catch (Exception e) {
 						// TODO Auto-generated catch block
-						e.printStackTrace();
+						log.error(e.getMessage(), e);
 					}
 					timer.update(time.milliseconds());
 					metadataEnd = time.milliseconds();
@@ -739,7 +739,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 						}
 					} catch (Exception e) {
 						// TODO Auto-generated catch block
-						e.printStackTrace();
+						log.error(e.getMessage(), e);
+						
 					}
 					metadataEnd = time.milliseconds();
 					timer.update(time.milliseconds());

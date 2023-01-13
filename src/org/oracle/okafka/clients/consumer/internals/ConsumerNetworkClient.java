@@ -579,8 +579,10 @@ public class ConsumerNetworkClient {
 	 * @return true if subscription is successsful else false.
 	 * @throws Exception 
 	 */
-	public boolean mayBeTriggerSubcription(long timeout) throws Exception {
+	
+	 public boolean mayBeTriggerSubcription(long timeout) throws Exception {
 		if(!subscriptions.subscription().equals(subscriptionSnapshot)) {
+			boolean noSubExist = false;
 			rejoin = true;
 			String topic = getSubscribableTopics();
 			long now = time.milliseconds();
@@ -591,35 +593,33 @@ public class ConsumerNetworkClient {
 			}
 			try {
 				if(aqConsumer.getSubcriberCount(node, topic) < 1) {
+					noSubExist = true;
+				}
+				
+				ClientRequest request = this.client.newClientRequest(node, new SubscribeRequest.Builder(topic), now, true, requestTimeoutMs < timeout ? requestTimeoutMs: (int)timeout, null);
+				ClientResponse response = this.client.send(request, now);
+
+				if(handleSubscribeResponse(response)) {
 					
-					ClientRequest request = this.client.newClientRequest(node, new SubscribeRequest.Builder(topic), now, true, requestTimeoutMs < timeout ? requestTimeoutMs: (int)timeout, null);
-					ClientResponse response = this.client.send(request, now);
-					
-	                if(!handleSubscribeResponse(response)) {
-	                	return false;
-	        		}
-	                else 
-	                {
-	                	TopicPartition tp = new TopicPartition(topic, -1);
-	                	
-	                	if(aqConsumer.getoffsetStartegy() == "earliest")
-	                	{
-	                		Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>() {
-	            				{
-	            					put(tp, -2L);
-	            				}
-	            			};
-	            			
-	            			return resetOffsetsSync(offsetResetTimestamps, timeout);
-				        } 
-	                	
-	                	else if(aqConsumer.getoffsetStartegy() == "none")
-	                	{
-	                	  throw new Exception("No previous offset found for the consumer's group");
-	                	}
-					}
-	                
-	             }
+					if(noSubExist && aqConsumer.getoffsetStartegy() == "earliest") {
+		                	TopicPartition tp = new TopicPartition(topic, -1);
+		                	Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>() {
+		            		{
+		            			put(tp, -2L);
+		            		}
+		            		};
+		            			
+		                return resetOffsetsSync(offsetResetTimestamps, timeout);
+		            } 
+		                	
+		            else if(noSubExist && aqConsumer.getoffsetStartegy() == "none") {
+		                throw new Exception("No previous offset found for the consumer's group");
+		            }
+				}
+				else {
+					return false;
+				}
+				
 			}
 			catch(Exception e){
 				log.error("Exception while subscribing to the topic" + e,e);
@@ -826,6 +826,7 @@ public class ConsumerNetworkClient {
 		subscriptions.requestFailed(failed, time.milliseconds() + retryBackoffMs);
 		return true;
 	}
+	
 	/**
 	 * Synchronously commit last consumed offsets if auto commit is enabled.
 	 */
