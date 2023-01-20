@@ -162,28 +162,27 @@ public class MessageIdConverter {
 		return sb.toString();	
 	}
 
-	public static String getMsgId(TopicPartition tp, long offset, String endian) {
-
+	public static String getMsgId(TopicPartition tp, long offset, String endian, int priority) {
+        
 		StringBuilder sb = new StringBuilder("");
 		/*String subpartition = String.format("%16s", Long.toHexString(offset >>> 16)).replace(' ', '0');     	
    	    String partition =  String.format("%8s",Integer.toHexString(tp.partition())).replace(' ', '0');   	
     	String seq = String.format("%4s", Long.toHexString(offset & 65535)).replace(' ', '0');
 		 */
-
-		String subpartition = String.format("%16s", Long.toHexString((int)(offset/20000))).replace(' ', '0');     	
-		String partition =  String.format("%8s",Integer.toHexString(tp.partition())).replace(' ', '0');   	
+        String subpartition = String.format("%16s", Long.toHexString((int)(offset/20000))).replace(' ', '0');     	
+		String partition =  String.format("%8s",Integer.toHexString(2*tp.partition())).replace(' ', '0');   	
 		String seq = String.format("%4s", Long.toHexString(offset % 20000)).replace(' ', '0');
-
+        
 
 		if(endian.equals("66")) {
 			sb.append(reverse(subpartition));
 			sb.append(reverse(partition));
-			sb.append("0166");
+			sb.append("0"+priority+"66");
 			sb.append(reverse(seq));   	
 		} else if (endian.equals("FF")) {
 			sb.append(swap(subpartition));
 			sb.append(swap(partition));
-			sb.append("01FF");
+			sb.append("0"+priority+"FF");
 			sb.append(swap(seq));
 		}
 

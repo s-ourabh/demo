@@ -29,6 +29,7 @@
 
 package org.oracle.okafka.clients.consumer.internals;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -49,6 +50,7 @@ import org.apache.kafka.clients.ClientResponse;
 import org.oracle.okafka.clients.KafkaClient;
 import org.oracle.okafka.clients.Metadata;
 import org.oracle.okafka.clients.NetworkClient;
+import org.oracle.okafka.clients.consumer.internals.SubscriptionState.FetchPosition;
 import org.apache.kafka.clients.RequestCompletionHandler;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor.Assignment;
@@ -105,6 +107,7 @@ public class ConsumerNetworkClient {
 	private final List<AQjmsBytesMessage> messages = new ArrayList<>();
 	private Node currentSession = null;
 	String consumerGroupId;
+	private final AQKafkaConsumer aqConsumer;
 	
 
 	public ConsumerNetworkClient(
@@ -121,7 +124,8 @@ public class ConsumerNetworkClient {
 			int requestTimeoutMs,
 			int maxPollTimeoutMs,
 			int sessionTimeoutMs,
-			long defaultApiTimeoutMs) {
+			long defaultApiTimeoutMs,
+			AQKafkaConsumer aqConsumer) {
 		this.consumerGroupId = groupId;
 		this.log = logContext.logger(ConsumerNetworkClient.class);
 		this.client = client;
@@ -138,7 +142,7 @@ public class ConsumerNetworkClient {
 		//Snapshot of subscription. Useful for ensuring if all topics are subscribed.
 		this.subscriptionSnapshot = new HashSet<>();
 		this.defaultApiTimeoutMs = defaultApiTimeoutMs;
-
+        this.aqConsumer = aqConsumer;
 		if (autoCommitEnabled)
 			this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
 	}
@@ -573,9 +577,12 @@ public class ConsumerNetworkClient {
 	/**
 	 * Subscribe to topic if not done
 	 * @return true if subscription is successsful else false.
+	 * @throws Exception 
 	 */
-	public boolean mayBeTriggerSubcription(long timeout) {
+	
+	 public boolean mayBeTriggerSubcription(long timeout) throws Exception {
 		if(!subscriptions.subscription().equals(subscriptionSnapshot)) {
+			boolean noSubExist = false;
 			rejoin = true;
 			String topic = getSubscribableTopics();
 			long now = time.milliseconds();
@@ -584,11 +591,41 @@ public class ConsumerNetworkClient {
 				log.error("Failed to subscribe to topic: {}", topic);
 				return false;
 			}
+			try {
+				if(aqConsumer.getSubcriberCount(node, topic) < 1) {
+					noSubExist = true;
+				}
+				
+				ClientRequest request = this.client.newClientRequest(node, new SubscribeRequest.Builder(topic), now, true, requestTimeoutMs < timeout ? requestTimeoutMs: (int)timeout, null);
+				ClientResponse response = this.client.send(request, now);
 
-			ClientRequest request = this.client.newClientRequest(node, new SubscribeRequest.Builder(topic), now, true, requestTimeoutMs < timeout ? requestTimeoutMs: (int)timeout, null);
-			ClientResponse response = this.client.send(request, now);
-
-			return handleSubscribeResponse(response);
+				if(handleSubscribeResponse(response)) {
+					
+					if(noSubExist && aqConsumer.getoffsetStartegy() == "earliest") {
+		                	TopicPartition tp = new TopicPartition(topic, -1);
+		                	Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>() {
+		            		{
+		            			put(tp, -2L);
+		            		}
+		            		};
+		            			
+		                return resetOffsetsSync(offsetResetTimestamps, timeout);
+		            } 
+		                	
+		            else if(noSubExist && aqConsumer.getoffsetStartegy() == "none") {
+		                throw new Exception("No previous offset found for the consumer's group");
+		            }
+				}
+				else {
+					return false;
+				}
+				
+			}
+			catch(Exception e){
+				log.error("Exception while subscribing to the topic" + e,e);
+				throw e;
+			}
+			
 
 		}
 		return true;
@@ -769,11 +806,13 @@ public class ConsumerNetworkClient {
 			else if (offsetLong == -1L) 
 				offset = "TO_LATEST";
 			else offset = Long.toString(offsetLong);
-			if( tpResult.getValue() == null) {
+			if( tpResult.getValue() == null && tpResult.getKey().partition()!=-1) {
 				subscriptions.requestOffsetReset(tpResult.getKey(), null);
+				subscriptions.seekValidated(tpResult.getKey(), new FetchPosition(0));
+			    subscriptions.completeValidation(tpResult.getKey());
 				log.trace("seek to offset {} for topicpartition  {} is successful", offset, tpResult.getKey());
 			}
-			else {
+			else if(tpResult.getValue()!=null){
 				if(tpResult.getValue() instanceof java.sql.SQLException && ((java.sql.SQLException)tpResult.getValue()).getErrorCode() == 25323)
 					subscriptions.requestOffsetReset(tpResult.getKey(), null);
 				else failed.add(tpResult.getKey());
@@ -787,6 +826,7 @@ public class ConsumerNetworkClient {
 		subscriptions.requestFailed(failed, time.milliseconds() + retryBackoffMs);
 		return true;
 	}
+	
 	/**
 	 * Synchronously commit last consumed offsets if auto commit is enabled.
 	 */
