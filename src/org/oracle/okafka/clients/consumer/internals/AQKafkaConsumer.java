@@ -666,7 +666,8 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			{
 				SQLException sqlExcp = (SQLException)exception;
 				int errorCode = sqlExcp.getErrorCode();
-				if(errorCode == 20) {
+				log.error("SQL Error:ORA-" + errorCode);
+				if(errorCode == 28 || errorCode == 17410) {
 					disconnected = true;
 				}
 			}
@@ -817,6 +818,11 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
     	
         log.debug("Creating Join Group Response. QPAT Length: " +length);
         try {
+        	if(disconnected)
+        	{
+        		throw exception;
+        	}
+        	
         	if(qpatInfo != null) {
         		//Check if This session is Leader or not
         		for(int ind = 0; ind < length; ind++) {
@@ -922,10 +928,12 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         			}
         		}
         	}
-        } catch(SQLException sqlEx) {
-        	log.error("Exception in creating Join Group response " + sqlEx.getMessage(), sqlEx);
-        	sqlEx.printStackTrace();
-        	exception = sqlEx;
+        } catch(Exception excp) {
+        	if(excp instanceof SQLException)
+        	{
+        		SQLException sqlEx = (SQLException)excp;
+        		log.error("Exception in creating Join Group response " + sqlEx.getMessage(), sqlEx);
+        	}
         	memberPartitionMap.clear();
         	partitions.clear();
         	leader = -1;
@@ -1027,13 +1035,11 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
             } catch(Exception exception) {
             	boolean disconnected = false;
             	log.error("Exception in syncGroup " + exception.getMessage(), exception);
-            	exception.printStackTrace();
-            	
             	if(exception instanceof SQLException)
             	{
             		SQLException sqlExcp = (SQLException) exception;
             		int sqlErrorCode = sqlExcp.getErrorCode();
-            		if(sqlErrorCode == 20)
+            		if(sqlErrorCode == 28 || sqlErrorCode == 17410)
             			disconnected = true;
             	}
             	return createSyncResponse(request, null, -1, exception, disconnected);
@@ -1151,6 +1157,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			connMeResponse.setUrl(url);
 			connMeResponse.setFlags(flags);
 			connMeResponse.setPartitionList(partitionArr);
+			log.info("Preferred Broker: " + instId+ " URL " + url);
 			
 		} catch(Exception connMeEx)
 		{
@@ -1297,7 +1304,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			}
 			TopicConsumers consumers = topicConsumersMap.get(node);	
 			consumers.getTopicSubscriber(topic);
-			metadata.setDBVersion(consumers.getDBVersion());
+			metadata.setDBVersion(consumers.getDBVersion());			
 		} catch(JMSException exception) { 
 			log.error("Exception during Subscribe request " + exception, exception);
 			log.info("Exception during Subscribe request. " + exception);
@@ -1325,7 +1332,6 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		private Map<String, TopicSubscriber> topicSubscribers = null;
 		private final Node node;
 		private String dbVersion;
-		 
 		public TopicConsumers(Node node) throws JMSException {
 			this(node, TopicSession.AUTO_ACKNOWLEDGE);
 		}
@@ -1351,12 +1357,12 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
                 		this.dbVersion = ConnectionUtils.getDBVersion(oConn);
                 	}catch(Exception e)
                 	{
-                		log.error("Exception whle fetching DB Version " + e,e);
+                		log.error("Exception whle fetching DB Version " + e);
                 	}
         			
         		}catch(Exception e)
         		{
-        			log.error("Exception while fetching database session information " + e);
+        			log.error("Exception wnile getting database session information " + e);
         		}
 
         		node.setId(instId);
@@ -1368,6 +1374,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         	{
         		log.error("Exception while getting instance id from conneciton " + e, e);
         	}
+        	
         	topicSubscribers = new HashMap<>();
 		}
 		/**
@@ -1409,7 +1416,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		 */
 		private TopicSubscriber createTopicSubscriber(String topic) throws JMSException {
 			refresh(node);
-			Topic dest = ((AQjmsSession)sess).getTopic(ConnectionUtils.getUsername(configs), topic); 
+			Topic dest = ((AQjmsSession)sess).getTopic((node!=null&&node.user()!=null)?node.user():ConnectionUtils.getUsername(configs), topic); 
 			TopicSubscriber subscriber = sess.createDurableSubscriber(dest, configs.getString(ConsumerConfig.GROUP_ID_CONFIG));
 			topicSubscribers.put(topic, subscriber);
 			return subscriber;

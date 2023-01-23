@@ -578,9 +578,10 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 this.transactionManager,
                 apiVersions); */
         int retries = configureRetries(producerConfig, producerConfig.idempotenceEnabled(), log );
+
+
         return new SenderThread(logContext, this.clientId, client, this.metadata, this.accumulator,
-				false, this.producerConfig.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG), acks, retries, null, Time.SYSTEM,
-				producerConfig.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG), producerConfig.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG));
+				false, this.producerConfig, acks, retries, null, Time.SYSTEM);
     }
     
     private static int configureRetries(ProducerConfig config, boolean idempotenceEnabled, Logger log) {

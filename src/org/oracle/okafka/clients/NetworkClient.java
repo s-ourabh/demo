@@ -613,7 +613,6 @@ public class NetworkClient implements KafkaClient {
 			// should we update our metadata?
 			long timeToNextMetadataUpdate = metadata.timeToNextUpdate(now);
 			long waitForMetadataFetch = this.metadataFetchInProgress ? defaultRequestTimeoutMs : 0;
-
 			long metadataTimeout = Math.max(timeToNextMetadataUpdate, waitForMetadataFetch);
 			if (metadataTimeout > 0) {
 				return metadataTimeout;

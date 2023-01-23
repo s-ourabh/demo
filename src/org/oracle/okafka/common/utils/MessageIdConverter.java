@@ -62,8 +62,8 @@ public class MessageIdConverter {
 
 	public static OKafkaOffset getOKafkaOffset(String msgId, boolean getPartId, boolean getSubPartId) {
 		
-		/* if(msgId == null)
-			return  new OKafkaOffset(-1, -1, -1); */
+		 if(msgId == null)
+			return  new OKafkaOffset(-1, -1, -1); 
 		
 		if(msgId.length() != 35) 
 			throw new InvalidMessageIdException("Length of message Id  is not 35");
@@ -161,7 +161,6 @@ public class MessageIdConverter {
 		}
 		return sb.toString();	
 	}
-
 	public static String getMsgId(TopicPartition tp, long offset, String endian, int priority) {
         
 		StringBuilder sb = new StringBuilder("");
@@ -185,7 +184,6 @@ public class MessageIdConverter {
 			sb.append("0"+priority+"FF");
 			sb.append(swap(seq));
 		}
-
 		return sb.toString();
 	}
 

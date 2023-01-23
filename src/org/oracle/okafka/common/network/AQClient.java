@@ -293,7 +293,7 @@ private void getPartitionInfo(List<String> topics, List<String> topicsRem, Conne
 		return;
 
 	//String queryQShard = "select shard_id, enqueue_instance from user_queue_shards where  name = ? ";
-	String queryQShard = "select SHARD_ID, ENQUEUE_INSTANCE from user_queue_shards where  NAME = (select qid from user_queues where name = upper(?))";
+	String queryQShard = "select SHARD_ID, ENQUEUE_INSTANCE from user_queue_shards where  NAME = (select qid from user_queues where name = upper(?)) ";
 	PreparedStatement stmt1 = null;
 	try {
 		stmt1 = con.prepareStatement(queryQShard);

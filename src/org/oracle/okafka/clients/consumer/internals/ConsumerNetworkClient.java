@@ -154,33 +154,44 @@ public class ConsumerNetworkClient {
 	 * @return messages consumed.
 	 */
 	public List<AQjmsBytesMessage> poll(final long timeoutMs)  {
-		this.messages.clear();
-		Map<Node, String> pollMap = getPollableMap();
-		long now = time.milliseconds();
-		RequestCompletionHandler callback = new RequestCompletionHandler() {
-			public void onComplete(ClientResponse response) {
-				//do nothing;
-			}
-		};
-		log.debug("Polling for topics #" + pollMap.entrySet().size());
-		
-		for(Map.Entry<Node, String> poll : pollMap.entrySet()) {	
-			Node node = poll.getKey();
-			log.debug("Fetch Records for topic " + poll.getValue() + " from host " + node );
-			if(!this.client.ready(node, now)) {
-				log.debug("Failed to consume messages from node: {}", node);
-				//ToDo: Retry poll to get new connection to same or different node.
-				if(currentSession  != null && currentSession == node)
-				{
-					currentSession = null;
+		boolean retry = false;
+		long pollStartTime = System.currentTimeMillis();
+		long timeSpent = 0;
+		do {
+			retry = false;
+			this.messages.clear();
+			Map<Node, String> pollMap = getPollableMap();
+			long now = time.milliseconds();
+			RequestCompletionHandler callback = new RequestCompletionHandler() {
+				public void onComplete(ClientResponse response) {
+					//do nothing;
 				}
-			} else {
-				ClientRequest request  = createFetchRequest(node, poll.getValue(), callback, requestTimeoutMs < timeoutMs ? requestTimeoutMs : (int)timeoutMs);
-				ClientResponse response = client.send(request, now);
-				handleFetchResponse(response, timeoutMs);
-				break;
+			};
+			log.debug("Polling for topics #" + pollMap.entrySet().size());
+
+			for(Map.Entry<Node, String> poll : pollMap.entrySet()) {	
+				Node node = poll.getKey();
+				log.debug("Fetch Records for topic " + poll.getValue() + " from host " + node );
+				if(!this.client.ready(node, now)) {
+					log.debug("Failed to consume messages from node: {}", node);
+					//ToDo: Retry poll to get new connection to same or different node.
+					if(currentSession  != null && currentSession == node)
+					{
+						currentSession = null;
+					}
+				} else {
+					ClientRequest request  = createFetchRequest(node, poll.getValue(), callback, requestTimeoutMs < timeoutMs ? requestTimeoutMs : (int)timeoutMs);
+					ClientResponse response = client.send(request, now);
+					handleFetchResponse(response, timeoutMs);
+					if (response.wasDisconnected())
+						retry = true;
+					
+					break;
+				}
 			}
-		}
+			timeSpent = System.currentTimeMillis() - pollStartTime;
+		}while(retry &&  timeSpent < timeoutMs );
+		
 		return this.messages;
 	}
 	/**
@@ -200,7 +211,7 @@ public class ConsumerNetworkClient {
 					return Collections.singletonMap(currentSession, this.subscriptionSnapshot.iterator().next());
 				}
 				
-				//If more than 1 nodes available then, Pick a READY Node first. 
+				//If more than 1 node available then, Pick a READY Node first. 
 				//Use a READY Node, invoke DBMS_TEQK.AQ$_CONNECTME() and use the node returned from there
 				for(Node nodeNow: nodeList)
 				{
@@ -456,7 +467,7 @@ public class ConsumerNetworkClient {
 		Exception exception = syncResponse.getException();
 		
 		if(response.wasDisconnected()) {
-			log.info("Join Group failed as connection to database was severed.");
+			log.info("Sync Group failed as connection to database was severed.");
 			client.disconnected(metadata.getNodeById(Integer.parseInt(response.destination())), time.milliseconds()); 
 			rejoin = true;
 			currentSession = null;
@@ -603,11 +614,8 @@ public class ConsumerNetworkClient {
 					
 					if(noSubExist && aqConsumer.getoffsetStartegy() == "earliest") {
 		                	TopicPartition tp = new TopicPartition(topic, -1);
-		                	Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>() {
-		            		{
-		            			put(tp, -2L);
-		            		}
-		            		};
+		                	Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<TopicPartition, Long>(); 		            		
+		            		offsetResetTimestamps.put(tp, -2L);
 		            			
 		                return resetOffsetsSync(offsetResetTimestamps, timeout);
 		            } 
@@ -933,6 +941,8 @@ public class ConsumerNetworkClient {
 		ClientResponse response = this.client.send(request, now);  // Invokes  DBMS_TEQK.AQ$_CONNECT_ME
 		log.debug("Got ConnectMe response");
 		ConnectMeResponse connMeResponse = (ConnectMeResponse)response.responseBody();
-		return connMeResponse.getPreferredNode();
+		Node preferredNode  = connMeResponse.getPreferredNode();
+		log.debug("ConnectMe: PreferredNode " +preferredNode );
+		return preferredNode;
 	}
 }

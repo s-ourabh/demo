@@ -10,10 +10,10 @@ package org.oracle.okafka.common.utils;
 import java.io.File;
 import java.io.FileReader;
 import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.ResultSet;
-
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
 import java.util.Properties;
 
 import javax.jms.JMSException;
@@ -28,6 +28,7 @@ import org.oracle.okafka.common.config.SslConfigs;
 import org.oracle.okafka.common.errors.ConnectionException;
 import org.slf4j.Logger;
 
+import oracle.jdbc.driver.OracleConnection;
 import oracle.jdbc.pool.OracleDataSource;
 import oracle.jms.AQjmsFactory;
 import oracle.jms.AQjmsSession;
@@ -112,7 +113,7 @@ public class ConnectionUtils {
     	fr = new FileReader(file);
     	Properties prop = new Properties();
     	prop.load(fr);
-    	return prop.getProperty("user");
+    	return prop.getProperty("user").trim();
     	} catch( Exception exception) {
     		//do nothing
     	} finally {

@@ -29,7 +29,6 @@
 
 package org.oracle.okafka.clients.producer.internals;
 
-
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -41,6 +40,8 @@ import org.oracle.okafka.clients.KafkaClient;
 import org.oracle.okafka.clients.Metadata;
 import org.apache.kafka.clients.RequestCompletionHandler;
 import org.oracle.okafka.common.requests.ProduceRequest;
+import org.oracle.okafka.clients.producer.KafkaProducer;
+import org.oracle.okafka.clients.producer.ProducerConfig;
 import org.oracle.okafka.clients.producer.internals.ProducerBatch;
 import org.oracle.okafka.clients.producer.internals.RecordAccumulator;
 import org.apache.kafka.clients.producer.internals.SenderMetricsRegistry;
@@ -48,6 +49,7 @@ import org.oracle.okafka.common.requests.ProduceResponse;
 import org.oracle.okafka.common.utils.MessageIdConverter;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.errors.InvalidMetadataException;
+import org.apache.kafka.common.errors.NotLeaderForPartitionException;
 import org.apache.kafka.common.errors.RetriableException;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.utils.LogContext;
@@ -106,23 +108,26 @@ public class SenderThread implements Runnable {
     /* true when the caller wants to ignore all unsent/inflight messages and force close.  */
     private volatile boolean forceClose;
     
+    private final ProducerConfig config;
+    
     public SenderThread(LogContext logContext,String clientId, KafkaClient client, Metadata metadata, RecordAccumulator accumulator,
-			boolean guaranteeMessageOrder, int maxRequestSize, short acks, int retries,
-			SenderMetricsRegistry metricsRegistry, Time time, int requestTimeoutMs, long retryBackoffMs) {
+			boolean guaranteeMessageOrder, ProducerConfig pConfig, short acks, int retries,
+			SenderMetricsRegistry metricsRegistry, Time time) {
 		this.log = logContext.logger(SenderThread.class);
 		this.clientId = clientId;
         this.accumulator = accumulator;
         this.client = client;
         this.metadata = metadata;
         this.guaranteeMessageOrder = guaranteeMessageOrder;
-        this.maxRequestSize = maxRequestSize;
+        this.config = pConfig;
+        this.maxRequestSize = config.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG);
         this.correlation = 0;
         this.running = true;
         this.acks = acks;
         this.time = time;
         this.retries = retries;
-        this.requestTimeoutMs = requestTimeoutMs;
-		this.retryBackoffMs = retryBackoffMs;
+        this.requestTimeoutMs = config.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
+		this.retryBackoffMs = config.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG);
     }
 
     /**
@@ -170,9 +175,23 @@ public class SenderThread implements Runnable {
      *
      * @param now The current POSIX time in milliseconds
      */
-    void run(long now) {   	
-        sendProducerData(now);
+    void run(long now) {   
+        long pollTimeOut = sendProducerData(now);
         client.maybeUpdateMetadata(now);
+        
+        try {
+        	long sleepTime = pollTimeOut;
+        	if (sleepTime == Long.MAX_VALUE)
+        	{
+        		sleepTime =(int) Math.min(config.getLong(ProducerConfig.LINGER_MS_CONFIG), 5000);
+        		
+        	}
+        	if(sleepTime > 0)
+        	{
+        		Thread.currentThread().sleep(sleepTime);
+        	}
+        	
+        }catch(Exception e) {} 
     }
 
     private long sendProducerData(long now) {
@@ -297,33 +316,53 @@ public class SenderThread implements Runnable {
     			}
     		};
     		
-
             ClientRequest request = client.newClientRequest(node, new ProduceRequest.Builder(batch.topicPartition, batch.records(), (short)1, -1), time.milliseconds(), true, -1, callback);
-        	send(request);  
+        	send(request, batch);  
         }
-    	
     }
     
     /**
      * Send produce request to destination
      * Handle response generated from send.
      */
-    public void send(ClientRequest request)  {
+    public void send(ClientRequest request, ProducerBatch batch)  {
     	/*for(Map.Entry<String, Map<TopicPartition, MemoryRecords>> produceRecordsByPartition : request.getproduceRecordsByTopic().entrySet()) {
     		for(Map.Entry<TopicPartition, MemoryRecords> partitionRecords : produceRecordsByPartition.getValue().entrySet()) {
-    			
     		}
     	}*/
-		ClientResponse response = client.send(request, time.milliseconds());  
-    	completeResponse(response);
-    			
+		ClientResponse response = client.send(request, time.milliseconds()); 
+		log.info("Batch Send complete, evaluating response " + batch.topicPartition);
+		ProduceResponse pResponse = (ProduceResponse)response.responseBody();
+		ProduceResponse.PartitionResponse partitionResponse = pResponse.getPartitionResponse();
+		if(response.wasDisconnected()) {
+			log.info("Connection to oracle database node " + response.destination() +" was broken. Retry again");
+			accumulator.reenqueue(batch, System.currentTimeMillis());
+			//Request for MetaData update since the Database instance has went down.
+			this.metadata.requestUpdate();
+		}
+		else if(partitionResponse.exception != null)
+		{
+			RuntimeException producerException = partitionResponse.exception;
+			if(producerException instanceof  NotLeaderForPartitionException) {
+				
+				log.info("No Owner for Topoic Partition " +batch.topicPartition +" retrying.");
+			}
+			else {
+				log.info("Exception while sending batch for partiton " +batch.topicPartition +". " + producerException);
+			}
+			accumulator.reenqueue(batch, System.currentTimeMillis());
+		}
+		else {
+			log.info("No Exception from send. Completing the batch");
+			completeResponse(response);
+		}
     }
     
     /**
      * Handle response using callback in a request
      */
     private void completeResponse(ClientResponse response) {
-    	response.onComplete();
+			response.onComplete();
     }
     
 	/**
@@ -364,10 +403,6 @@ public class SenderThread implements Runnable {
 		ProduceResponse.PartitionResponse partResp = produceResponse.getPartitionResponse();
 		completeBatch(batch, partResp, correlationId, now,
 				receivedTimeMs + produceResponse.throttleTimeMs());       
-						
-				
-				
-				
 	}
 	
 	/**

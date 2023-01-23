@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.StringTokenizer;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -280,6 +281,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	// refcount is used to allow reentrant access by the thread who has acquired currentThread
 	private final AtomicInteger refcount = new AtomicInteger(0);
 	
+
 	/**
 	 * A consumer is instantiated by providing a set of key-value pairs as configuration. Values can be
 	 * either strings or objects of the appropriate type (for example a numeric configuration would accept either the
@@ -859,7 +861,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 				try {
 						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
 				}
-				catch(IllegalStateException iSE)
+				catch(IllegalStateException isE)
 				{
 					if(metadata.getDBMajorVersion() < 23)
 					{
@@ -869,7 +871,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 						subscriptions.completeValidation(tp);
 						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
 					}
-				}
+						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+				}				
 				catch(Exception e)
 				{
 					log.error("Exception while setting fetch position " + e , e);
@@ -1378,6 +1381,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		if (refcount.decrementAndGet() == 0)
 			currentThread.set(NO_CURRENT_THREAD);
 	}
+	
 	
 
 	@Override

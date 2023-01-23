@@ -99,7 +99,6 @@ public final class Metadata implements Closeable {
 	private KafkaException fatalException;
 	int dbMajorVersion = 23;
 	int dbMinorVersion = 1;
-
 	public Metadata(long refreshBackoffMs, long metadataExpireMs, boolean allowAutoTopicCreation, AbstractConfig configs) {
 		this(refreshBackoffMs, metadataExpireMs, allowAutoTopicCreation, false, new ClusterResourceListeners(), configs);
 	}
@@ -334,7 +333,7 @@ public final class Metadata implements Closeable {
 		else
 			log.debug("Update Metadata: No old leader as of now for cluster " + 
 					cluster.clusterResource().clusterId() + " for version " + (this.version-1));
-
+		
 		if(oldLeader == null)
 		{
 			oldLeader = (org.oracle.okafka.common.Node)oldCluster.controller();
@@ -627,7 +626,6 @@ public final class Metadata implements Closeable {
 			throw metadataException;
 		}
 	}
-	
 	// Parse DB Major and Minor Version
 	public void setDBVersion(String dbVersion)
 	{
@@ -636,12 +634,15 @@ public final class Metadata implements Closeable {
 			setDBMajorVersion(Integer.parseInt(stn.nextToken()));
 			setDBMinorVersion(Integer.parseInt(stn.nextToken()));
 		}catch(Exception e) {
+
 		}
 	}
+
 	public void setDBMajorVersion(int dbMVersion)
 	{
 		this.dbMajorVersion = dbMVersion;
 	}
+
 	public void setDBMinorVersion(int dbMinorVersion)
 	{
 		this.dbMinorVersion = dbMinorVersion;
@@ -654,4 +655,5 @@ public final class Metadata implements Closeable {
 	{
 		return this.dbMinorVersion;
 	}
+
 }

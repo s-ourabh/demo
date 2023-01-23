@@ -131,6 +131,7 @@ public final class AQKafkaProducer extends AQClient {
 		int retryCnt = 2; //
 		do
 		{
+			disconnected = false;
 			retryCnt--;
 			try  {
 				nodePublishers = topicPublishersMap.get(node);
@@ -157,31 +158,45 @@ public final class AQKafkaProducer extends AQClient {
 				log.trace("Messages sent successfully to topic : {} with partition: {}, number of messages: {}", topicPartition.topic(), topicPartition.partition(), msgs.length);
 				retryCnt = 0;
 			}
-			catch(NullPointerException nlp)
+		/*	catch(NullPointerException nlp)
 			{
 				partitionResponse =  createResponses(topicPartition, (RuntimeException)nlp, msgs);
 				retryCnt = 0;
 				disconnected = true;
 				break;
-			}
+			}*/
 			catch(Exception e) {
 				log.error("Exception while sending records for topic partition " + topicPartition + " no node " + node , e);
 
-				if ( (e instanceof AQjmsException) && 
-						((AQjmsException)e).getErrorNumber() == 25348 ) {
-					partitionResponse =  createResponses(topicPartition, new NotLeaderForPartitionException(e), msgs);  
-					retryCnt =0;
-					break;
-				}
+				if ( e instanceof JMSException) {
+					log.info(" Encountered AQJMS Exception with error code " + ((AQjmsException)e).getErrorNumber() );
+					
+					if( ((AQjmsException)e).getErrorNumber() == 25348 )
+					{
+						log.debug("Causing NotLeaderForPartitionException ");
+						partitionResponse =  createResponses(topicPartition, new NotLeaderForPartitionException(e), msgs);  
+						retryCnt =0;
+						break;
+					}					
+				}				
 				if(nodePublishers != null)
 				{
 					boolean connected = nodePublishers.isConnected();
 					if(!connected)
 					{
 						try {
-							log.info("Reconnecting to node " + node);
+							
 							nodePublishers.close();
-							nodePublishers.reCreate();
+							
+							if(retryCnt > 0)
+							{
+								log.info("Reconnecting to node " + node);
+								nodePublishers.reCreate();
+							}else {
+								disconnected = true;
+								log.info("Disconnected. Failing the batch");
+							}
+							
 						}catch(Exception reConnException)
 						{
 							log.error("Exception while reconnecting to node " + node , reConnException);
@@ -194,7 +209,9 @@ public final class AQKafkaProducer extends AQClient {
 							
 							topicPublishersMap.remove(node);
 							log.trace("Connection with node {} is closed", request.destination());
-							partitionResponse =  createResponses(topicPartition, (RuntimeException)e, msgs);
+							String exceptionMsg = "Database instance not reachable: " + node;
+							org.apache.kafka.common.errors.DisconnectException disconnExcp = new org.apache.kafka.common.errors.DisconnectException(exceptionMsg,e);
+							partitionResponse =  createResponses(topicPartition, disconnExcp, msgs);
 						}
 					}
 					else {
@@ -204,7 +221,7 @@ public final class AQKafkaProducer extends AQClient {
 				}
 			}
 		}while(retryCnt > 0);
-
+		
 		if( partitionResponse == null)
 			partitionResponse = createResponses(topicPartition, null, msgs);	
 		
@@ -226,7 +243,7 @@ public final class AQKafkaProducer extends AQClient {
 	 */
 	private void sendToAQ(AQjmsBytesMessage[] messages, TopicPublisher publisher) throws JMSException {
 		//Sends messages in bulk using topic publisher;
-		log.debug("In BulkSend: #messages = " + messages.length);
+		log.info("In BulkSend: #messages = " + messages.length);
 		((AQjmsProducer)publisher).bulkSend(publisher.getTopic(), messages);
 	}
 
@@ -255,6 +272,7 @@ public final class AQKafkaProducer extends AQClient {
 		int iter=0;
 		//Map<TopicPartition, ProduceResponse.PartitionResponse> responses = new HashMap<>();
 		ProduceResponse.PartitionResponse response =new ProduceResponse.PartitionResponse(exception);
+		
 		if(exception == null) {
 			response.msgIds = new ArrayList<>();
 			//response.logAppendTime = new ArrayList<>();
@@ -268,7 +286,7 @@ public final class AQKafkaProducer extends AQClient {
 					if(subPartitionId == -1) {
 						subPartitionId = MessageIdConverter.getOKafkaOffset(msgId).subPartitionId();
 					}
-				} catch(JMSException jmsException) {
+				} catch(Exception excp) {
 					msgId = null;
 					timeStamp = -1;
 				}
@@ -510,7 +528,7 @@ public final class AQKafkaProducer extends AQClient {
 		 * Creates topic publisher for given topic
 		 */
 		private TopicPublisher createTopicPublisher(String topic) throws JMSException {
-			Topic dest = ((AQjmsSession)sess).getTopic(ConnectionUtils.getUsername(configs), topic);
+			Topic dest = ((AQjmsSession)sess).getTopic((node!=null&&node.user()!=null)?node.user():ConnectionUtils.getUsername(configs), topic);
 			TopicPublisher publisher = sess.createPublisher(dest);
 			return publisher;
 
