@@ -353,7 +353,7 @@ public class SenderThread implements Runnable {
 			accumulator.reenqueue(batch, System.currentTimeMillis());
 		}
 		else {
-			log.info("No Exception from send. Completing the batch");
+			log.trace("No Exception from send. Completing the batch");
 			completeResponse(response);
 		}
     }
