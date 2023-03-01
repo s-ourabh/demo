@@ -824,7 +824,6 @@ public class ConsumerNetworkClient {
 				if(tpResult.getValue() instanceof java.sql.SQLException && ((java.sql.SQLException)tpResult.getValue()).getErrorCode() == 25323)
 					subscriptions.requestOffsetReset(tpResult.getKey(), null);
 				else failed.add(tpResult.getKey());
-
 				log.warn("Failed to update seek for topicpartition {} to offset {}", tpResult.getKey(), offset);
 			}
 
