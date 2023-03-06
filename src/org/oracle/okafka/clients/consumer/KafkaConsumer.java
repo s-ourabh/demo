@@ -791,9 +791,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
 			final Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>();
 			for (final TopicPartition partition : partitions) {
-				Long timestamp = offsetResetStrategyTimestamp(partition);
-				if (timestamp != null)
-					offsetResetTimestamps.put(partition, timestamp);
+				Long seekPos = offsetResetStrategyTimestamp(partition);
+				if (seekPos != null)
+					offsetResetTimestamps.put(partition, seekPos);
 			}
 
 			return client.resetOffsetsSync(offsetResetTimestamps, timeout - elapsed);

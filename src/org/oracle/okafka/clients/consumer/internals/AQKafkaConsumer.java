@@ -316,7 +316,7 @@ public final class AQKafkaConsumer extends AQClient{
     	int seekType;
     	String seekMsgId;
     	public SeekInput() {
-    		priority = 4;
+    		priority = -1;
     	}
     }
     
@@ -396,7 +396,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 								seekInputs[indx].seekType = SeekInput.SEEK_MSGID; // Seek to MessageId
 								inArgs[2]= "Seek Type: " + seekInputs[indx].seekType;
 								inArgs[3] ="Seek to Offset: " +  offsets.getValue();
-								seekInputs[indx].seekMsgId = MessageIdConverter.getMsgId(tp, offsets.getValue(), msgIdFormat, seekInputs[indx].priority);
+								seekInputs[indx].seekMsgId = MessageIdConverter.getMsgId(tp, offsets.getValue(), msgIdFormat, 0);
 							    inArgs[4] = "Seek To MsgId: "+seekInputs[indx].seekMsgId ;
 								validateMsgId(seekInputs[indx].seekMsgId);
 							}
@@ -435,12 +435,15 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					for(int i=0; i < seekInputs.length; i++) {
 						if(seekInputs[i].partition == -1) {
 						  seekStmt.setInt(stmtIndx++, seekInputs[i].partition);
-						}
-						else {
+						}else {
 							seekStmt.setInt(stmtIndx++, 2*seekInputs[i].partition);
 						}
+						if(seekInputs[i].seekType == SeekInput.SEEK_MSGID) {
+							  seekStmt.setInt(stmtIndx++, 0);
+					    }else {
+							  seekStmt.setInt(stmtIndx++, seekInputs[i].priority);
+						}
 						
-						seekStmt.setInt(stmtIndx++, seekInputs[i].priority);
 						seekStmt.setInt(stmtIndx++, seekInputs[i].seekType);
 						if(seekInputs[i].seekType == SeekInput.SEEK_MSGID){
 							seekStmt.setString(stmtIndx++, seekInputs[i].seekMsgId);
