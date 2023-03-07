@@ -253,13 +253,16 @@ public final class AQKafkaProducer extends AQClient {
 	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
 		AQjmsBytesMessage msg=null;
 		msg = (AQjmsBytesMessage)(session.createBytesMessage());
+		
+		if(key!=null) {
 		byte[] keyByteArray  = new byte[key.limit()];
 		key.get(keyByteArray);
+		msg.setJMSCorrelationID(new String(keyByteArray));
+		}
 		byte[] payload = new byte[value.limit()];
 		value.get(payload);
 		msg.writeBytes(payload);
-		msg.setJMSCorrelationID(new String(keyByteArray));
-		payload = null;	
+		payload = null;
 		msg.setStringProperty("topic", topicPartition.topic());
 		msg.setStringProperty("AQINTERNAL_PARTITION", Integer.toString(topicPartition.partition()*2));
 		return msg;
