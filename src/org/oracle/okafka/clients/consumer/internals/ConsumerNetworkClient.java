@@ -623,7 +623,7 @@ public class ConsumerNetworkClient {
 		            } 
 		                	
 		            else if(noSubExist && aqConsumer.getoffsetStartegy() == "none") {
-		                throw new ConfigException("No previous offset found for the consumer's group");
+		                throw new ConfigException("No previous offset found for the consumer group");
 		            }
 				}
 				else {
@@ -634,7 +634,7 @@ public class ConsumerNetworkClient {
 			catch(ConfigException exception) {
 				log.error("Exception while subscribing to the topic" + exception.getMessage(),exception);
 				log.info("Closing the consumer due to exception : " + exception.getMessage());
-				 throw new ConfigException("No previous offset found for the consumer's group");
+				 throw new ConfigException("No previous offset found for the consumer group");
 			}
 			catch(Exception e){
 				log.error("Exception while subscribing to the topic" + e.getMessage(),e);
