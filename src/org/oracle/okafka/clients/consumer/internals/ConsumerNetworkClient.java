@@ -62,6 +62,7 @@ import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.KafkaException;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.ConfigException;
 import org.oracle.okafka.common.internals.PartitionData;
 import org.oracle.okafka.common.internals.SessionData;
 import org.oracle.okafka.common.requests.CommitRequest;
@@ -591,7 +592,8 @@ public class ConsumerNetworkClient {
 	 * @throws Exception 
 	 */
 	
-	 public boolean mayBeTriggerSubcription(long timeout) throws Exception {
+	 public boolean mayBeTriggerSubcription(long timeout) {
+		
 		if(!subscriptions.subscription().equals(subscriptionSnapshot)) {
 			boolean noSubExist = false;
 			rejoin = true;
@@ -621,7 +623,7 @@ public class ConsumerNetworkClient {
 		            } 
 		                	
 		            else if(noSubExist && aqConsumer.getoffsetStartegy() == "none") {
-		                throw new Exception("No previous offset found for the consumer's group");
+		                throw new ConfigException("No previous offset found for the consumer's group");
 		            }
 				}
 				else {
@@ -629,12 +631,15 @@ public class ConsumerNetworkClient {
 				}
 				
 			}
-			catch(Exception e){
-				log.error("Exception while subscribing to the topic" + e,e);
-				throw e;
+			catch(ConfigException exception) {
+				log.error("Exception while subscribing to the topic" + exception.getMessage(),exception);
+				log.info("Closing the consumer due to exception : " + exception.getMessage());
+				 throw new ConfigException("No previous offset found for the consumer's group");
 			}
-			
-
+			catch(Exception e){
+				log.error("Exception while subscribing to the topic" + e.getMessage(),e);
+			}
+		
 		}
 		return true;
 

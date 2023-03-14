@@ -556,8 +556,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	 */
 	@Override
 	public void subscribe(Collection<String> topics, ConsumerRebalanceListener listener) {
-
-		acquireAndEnsureOpen();
+        acquireAndEnsureOpen();
 		try {
 			if (topics == null) {
 				throw new IllegalArgumentException("Topic collection to subscribe to cannot be null");
@@ -679,7 +678,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	public ConsumerRecords<K, V> poll(final long timeout) {
 		if (timeout < 0) 
 			throw new IllegalArgumentException("Timeout must not be negative");
-
+		
 		return poll(time.timer(timeout), false);
 	}
 
@@ -704,12 +703,13 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	public ConsumerRecords<K, V> poll(final Duration timeout) {
 		if (timeout.toMillis() < 0)
 			throw new IllegalArgumentException("Timeout must not be negative");
-
+		
 		return poll(time.timer(timeout), true);
 	}
 
-	private ConsumerRecords<K, V> poll(final Timer timer, final boolean includeMetadataInTimeout) {
+	private ConsumerRecords<K, V> poll(final Timer timer, final boolean includeMetadataInTimeout){
 		acquireAndEnsureOpen();
+		
 		try {
 			//if (this.subscriptions.hasNoSubscription()) {
 			//Changes for 2.8.1 use hasNoSubscriptionOrUserAssignment instead hsNoSubscription 
@@ -722,27 +722,17 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 				final long metadataEnd;
 				if(includeMetadataInTimeout) {
 					final long metadataStart = time.milliseconds();
-					try {
-						if (!updateMetadataAndSubscribeIfNeeded(timer.remainingMs())) {
+					if (!updateMetadataAndSubscribeIfNeeded(timer.remainingMs())) {
 							return ConsumerRecords.empty();
-						}
-					} catch (Exception e) {
-						// TODO Auto-generated catch block
-						log.error(e.getMessage(), e);
 					}
+					
 					timer.update(time.milliseconds());
 					metadataEnd = time.milliseconds();
 					elapsedTime += metadataEnd - metadataStart; 
 
 				} else {
-					try {
-						while(!updateMetadataAndSubscribeIfNeeded(Long.MAX_VALUE)) {
+					while(!updateMetadataAndSubscribeIfNeeded(Long.MAX_VALUE)) {
 							log.warn("Still waiting for metadata");
-						}
-					} catch (Exception e) {
-						// TODO Auto-generated catch block
-						log.error(e.getMessage(), e);
-						
 					}
 					metadataEnd = time.milliseconds();
 					timer.update(time.milliseconds());
@@ -775,7 +765,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		}
 	}
 
-	private boolean updateMetadataAndSubscribeIfNeeded(long timeout) throws Exception  {
+	private boolean updateMetadataAndSubscribeIfNeeded(long timeout) {
 		long elapsed = 0L;
 		long subscriptionStart = time.milliseconds();
 		client.maybeUpdateMetadata(timeout);
