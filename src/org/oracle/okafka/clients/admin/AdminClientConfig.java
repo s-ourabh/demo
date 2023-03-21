@@ -27,6 +27,7 @@
 package org.oracle.okafka.clients.admin;
 
 import org.oracle.okafka.clients.CommonClientConfigs;
+import org.oracle.okafka.common.config.SslConfigs;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
@@ -179,7 +180,8 @@ public class AdminClientConfig extends AbstractConfig {
                                         Importance.MEDIUM,
                                         SECURITY_PROTOCOL_DOC)
                                 .withClientSslSupport()
-                                .withClientSaslSupport()                         
+                                //.withClientSaslSupport()
+                                .define(SslConfigs.TNS_ALIAS, ConfigDef.Type.STRING, null, Importance.MEDIUM, SslConfigs.TNS_ALIAS_DOC)                         
                                 .define(ORACLE_SERVICE_NAME,
                                 		Type.STRING,
                                 		"",

@@ -41,6 +41,7 @@ import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.metrics.Sensor;
 import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.serialization.Deserializer;
+import org.oracle.okafka.common.config.SslConfigs;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -590,7 +591,8 @@ public class ConsumerConfig extends AbstractConfig {
                                         Importance.MEDIUM,
                                         CommonClientConfigs.SECURITY_PROTOCOL_DOC)
                                 .withClientSslSupport()
-                                .withClientSaslSupport()
+                              //.withClientSaslSupport()
+                                .define(SslConfigs.TNS_ALIAS, ConfigDef.Type.STRING, null, Importance.MEDIUM, SslConfigs.TNS_ALIAS_DOC)
                                 .define(ORACLE_SERVICE_NAME,
                                 		Type.STRING,
                                 		null,

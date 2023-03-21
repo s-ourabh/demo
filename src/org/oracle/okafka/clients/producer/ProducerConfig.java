@@ -378,6 +378,8 @@ public class ProducerConfig extends AbstractConfig {
 						Importance.MEDIUM,
 						CommonClientConfigs.SECURITY_PROTOCOL_DOC)
 				.withClientSslSupport()
+				//.withClientSaslSupport()
+				.define(SslConfigs.TNS_ALIAS, ConfigDef.Type.STRING, null, Importance.MEDIUM, SslConfigs.TNS_ALIAS_DOC)
 				.define(ENABLE_IDEMPOTENCE_CONFIG,
 						Type.BOOLEAN,
 						false,
