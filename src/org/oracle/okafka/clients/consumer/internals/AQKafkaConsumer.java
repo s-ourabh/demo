@@ -493,7 +493,6 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 					 response.put(topicSubscriber.getKey(), jms);
 				}
 			}
-			
 			try {
 				((AQjmsSession)topicConsumersByNode.getValue().getSession()).close();
 				((AQjmsConnection)topicConsumersByNode.getValue().getConnection()).close();
@@ -501,12 +500,15 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 				topicConsumersByNode.getValue().setConnection(null);
 				// ToDo: Delete User_queue_partition_assignment_table entry for   this Consumer Session from Database
 				// Execute DBMS_TEQK.AQ$_REMOVE_SESSION()
-				topicConsumersMap.clear();
 				
-			} catch(JMSException jms) {
+			} 
+			
+			catch(JMSException jms) {
 				//log.error("Failed to close session: {} associated with connection: {} and node: {}  ", consumers.getSession(), topicConsumersMap.getConnection(), node );
 			}
 		}
+		
+		topicConsumersMap.clear();
 		return new ClientResponse(request.makeHeader((short)1), request.callback(), request.destination(), 
                 request.createdTimeMs(), time.milliseconds(), true,null,null, new UnsubscribeResponse(response));
 	}
