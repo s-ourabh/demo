@@ -30,6 +30,7 @@
 package org.oracle.okafka.clients.consumer;
 
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -97,6 +98,7 @@ import org.oracle.okafka.common.config.SslConfigs;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.oracle.okafka.common.errors.FeatureNotSupportedException;
 import org.oracle.okafka.common.errors.InvalidLoginCredentialsException;
+import org.oracle.okafka.common.network.AQClient;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.internals.ClusterResourceListeners;
 import org.apache.kafka.common.metrics.JmxReporter;
@@ -109,6 +111,7 @@ import org.oracle.okafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.utils.AppInfoParser;
 import org.apache.kafka.common.utils.LogContext;
+import org.oracle.okafka.common.utils.ConnectionUtils;
 import org.oracle.okafka.common.utils.MessageIdConverter;
 import org.oracle.okafka.common.utils.TNSParser;
 import org.apache.kafka.common.utils.Time;
@@ -280,7 +283,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	private final AtomicLong currentThread = new AtomicLong(NO_CURRENT_THREAD);
 	// refcount is used to allow reentrant access by the thread who has acquired currentThread
 	private final AtomicInteger refcount = new AtomicInteger(0);
-	
+	private final int DLENGTH_SIZE = 4;
+
 
 	/**
 	 * A consumer is instantiated by providing a set of key-value pairs as configuration. Values can be
@@ -556,7 +560,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	 */
 	@Override
 	public void subscribe(Collection<String> topics, ConsumerRebalanceListener listener) {
-        acquireAndEnsureOpen();
+		acquireAndEnsureOpen();
 		try {
 			if (topics == null) {
 				throw new IllegalArgumentException("Topic collection to subscribe to cannot be null");
@@ -573,9 +577,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 				//Only one topic can be subscribed, unsubcribe to previous topics before subscribing to new topic 
 				Set<String> Alltopics = subscriptions.metadataTopics();
 				if(Alltopics.size() > 0) {
-		    		this.unsubscribe();
-		    	}
-				
+					this.unsubscribe();
+				}
+
 				log.debug("Subscribed to topic(s): {}", Utils.join(topics, ", "));
 				Set<String> subscribedTopicSet = new HashSet<>(topics);
 				this.subscriptions.subscribe(subscribedTopicSet, listener);
@@ -678,7 +682,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	public ConsumerRecords<K, V> poll(final long timeout) {
 		if (timeout < 0) 
 			throw new IllegalArgumentException("Timeout must not be negative");
-		
+
 		return poll(time.timer(timeout), false);
 	}
 
@@ -703,13 +707,13 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 	public ConsumerRecords<K, V> poll(final Duration timeout) {
 		if (timeout.toMillis() < 0)
 			throw new IllegalArgumentException("Timeout must not be negative");
-		
+
 		return poll(time.timer(timeout), true);
 	}
 
 	private ConsumerRecords<K, V> poll(final Timer timer, final boolean includeMetadataInTimeout){
 		acquireAndEnsureOpen();
-		
+
 		try {
 			//if (this.subscriptions.hasNoSubscription()) {
 			//Changes for 2.8.1 use hasNoSubscriptionOrUserAssignment instead hsNoSubscription 
@@ -723,16 +727,16 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 				if(includeMetadataInTimeout) {
 					final long metadataStart = time.milliseconds();
 					if (!updateMetadataAndSubscribeIfNeeded(timer.remainingMs())) {
-							return ConsumerRecords.empty();
+						return ConsumerRecords.empty();
 					}
-					
+
 					timer.update(time.milliseconds());
 					metadataEnd = time.milliseconds();
 					elapsedTime += metadataEnd - metadataStart; 
 
 				} else {
 					while(!updateMetadataAndSubscribeIfNeeded(Long.MAX_VALUE)) {
-							log.warn("Still waiting for metadata");
+						log.warn("Still waiting for metadata");
 					}
 					metadataEnd = time.milliseconds();
 					timer.update(time.milliseconds());
@@ -797,7 +801,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		return createConsumerRecordsMap(client.poll(timeoutMs));
 	}
 
-	private Map<TopicPartition, List<ConsumerRecord<K, V>>> createConsumerRecordsMap(List<AQjmsBytesMessage> messages)  {
+	private Map<TopicPartition, List<ConsumerRecord<K, V>>> createConsumerRecordsMap(List<AQjmsBytesMessage> messages, boolean obsolete)  {
 
 		if(messages.size() == 0 )
 		{
@@ -810,18 +814,19 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		int partition = -1;
 		for(AQjmsBytesMessage message : messages) {           
 			try {
+
 				byte[] valueByteArray = message.getBytesData(); 
 				byte[] keyByteArray = message.getJMSCorrelationIDAsBytes();
 
 				//topic = message.getStringProperty("topic");
 				topic = ((AQjmsDestination)message.getJMSDestination()).getTopicName();
 				try {
-					partition = message.getIntProperty("AQINTERNAL_PARTITION")/2;
+					partition = message.getIntProperty(AQClient.PARTITION_PROPERTY)/2;
 				}
 				catch(Exception e)
 				{
 					try {
-						partition = (int)message.getLongProperty("AQINTERNAL_PARTITION")/2;
+						partition = (int)message.getLongProperty(AQClient.PARTITION_PROPERTY)/2;
 					}catch(Exception e1)
 					{
 
@@ -849,7 +854,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 			if(tp != null && partition != -1) {
 				//Changes for 2.8.1
 				try {
-						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+					subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
 				}
 				catch(IllegalStateException isE)
 				{
@@ -861,7 +866,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 						subscriptions.completeValidation(tp);
 						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
 					}
-						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+					subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
 				}				
 				catch(Exception e)
 				{
@@ -887,6 +892,176 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		return consumerRecords;
 	}
 
+
+
+	private Map<TopicPartition, List<ConsumerRecord<K, V>>> createConsumerRecordsMap(List<AQjmsBytesMessage> messages)  {
+
+		if(messages.size() == 0 )
+		{
+			return Collections.<TopicPartition, List<ConsumerRecord<K, V>>>emptyMap();
+		}
+
+		Map<TopicPartition, List<ConsumerRecord<K, V>>> consumerRecords = new HashMap<>();
+		ConsumerRecord<K, V> record;
+		String topic = null;
+		int partition = -1;
+		boolean parsePayload = false;
+		byte[] keyArray = null;
+		byte[] valueArray = null;
+		int keyLen =0;
+		int valueLen = 0;
+
+		for(AQjmsBytesMessage message : messages) {       
+			keyArray = null;
+			valueArray = null;			
+			keyLen =0;
+			valueLen = 0;
+
+			try {
+				RecordHeaders rcH = new RecordHeaders();
+				try {
+					parsePayload= message.getBooleanProperty(AQClient.PARSEPAYLOAD_PROPERTY);
+				}catch(Exception e)
+				{
+					parsePayload = false;
+				}
+
+				/*
+				 * Received Byte Payload in below format:
+				 * | KEY LENGTH (4 Bytes Fixed)          | KEY   |
+				 * | VALUE LENGTH (4 BYTES FIXED)        | VALUE |
+				 * | HEADER NAME LENGTH(4 BYTES FIXED)   | HEADER NAME |
+				 * | HEADER VALUE LENGTH (4 BYTES FIXED) | HEADER VALUE |
+				 * | HEADER NAME LENGTH(4 BYTES FIXED)   | HEADER NAME |
+				 * | HEADER VALUE LENGTH (4 BYTES FIXED) | HEADER VALUE |
+				 * 
+				 * For records with null key , KEY LENGTH is set to 0.
+				 * For records with null value, VALUE LENGTH is set to 0.
+				 * Number of headers are set in property "AQINTERNAL_HEADERCOUNT"
+				 * 
+				 * 	*/
+				if(parsePayload)
+				{
+					byte[] payloadArray = message.getBytesData(); 
+					byte[] bLength = new byte[DLENGTH_SIZE];
+
+					//Read Key First
+					ByteBuffer pBuffer =  ByteBuffer.wrap(payloadArray);
+					pBuffer.get(bLength, 0, DLENGTH_SIZE);
+					keyLen = ConnectionUtils.convertToInt(bLength);
+					keyArray = new byte[keyLen];
+					pBuffer.get(keyArray,0,keyLen);
+
+					//Get Actual Payload
+					pBuffer.get(bLength, 0, DLENGTH_SIZE);
+					valueLen = ConnectionUtils.convertToInt(bLength);
+
+					valueArray = new byte[valueLen];
+					pBuffer.get(valueArray,0,valueLen);
+
+					int hCount =0;
+					try {
+						hCount = message.getIntProperty(AQClient.HEADERCOUNT_PROPERTY);
+					}catch(Exception e)
+					{
+						hCount = 0;
+					}
+					int hKeyLen=0;
+					int hValueLen=0;
+
+					for(int i =0; i<hCount ; i++)
+					{
+						pBuffer.get(bLength, 0, DLENGTH_SIZE);
+						hKeyLen = ConnectionUtils.convertToInt(bLength);
+						if(hKeyLen > 0)
+						{
+							byte[] hKeyArray = new byte[hKeyLen];
+							pBuffer.get(hKeyArray,0,hKeyLen);
+							String hKey = new String(hKeyArray);
+							pBuffer.get(bLength, 0, DLENGTH_SIZE);
+							hValueLen = ConnectionUtils.convertToInt(bLength);
+							byte[] hValueArray = new byte[hValueLen];
+							pBuffer.get(hValueArray,0,hValueLen);
+							rcH.add(hKey, hValueArray);
+						}
+					}
+				}
+				else {
+					keyArray = message.getJMSCorrelationIDAsBytes();
+					valueArray = message.getBytesData(); 
+				}
+
+				topic = ((AQjmsDestination)message.getJMSDestination()).getTopicName();
+				try {
+					partition = message.getIntProperty(AQClient.PARTITION_PROPERTY)/2;
+				}
+				catch(Exception e)
+				{
+					try {
+						partition = (int)message.getLongProperty(AQClient.PARTITION_PROPERTY)/2;
+					}catch(Exception e1) {
+
+					}
+				}
+				K key = this.keyDeserializer.deserialize(topic, keyArray);
+				V value = this.valueDeserializer.deserialize(topic, valueArray);
+
+				record = new ConsumerRecord<>(topic, partition, MessageIdConverter.getOffset(message.getJMSMessageID()),
+						message.getJMSTimestamp(), TimestampType.LOG_APPEND_TIME, null, keyLen == 0 ? ConsumerRecord.NULL_SIZE : keyLen,
+								valueLen == 0 ? ConsumerRecord.NULL_SIZE : valueLen, key, value, rcH);
+			} catch(JMSException exception) {
+				log.error("JMS Exception while creting ConsumerRecord  " + exception, exception);
+				record = new ConsumerRecord<>("", -1, -1, -1, TimestampType.NO_TIMESTAMP_TYPE, null, ConsumerRecord.NULL_SIZE, 
+						ConsumerRecord.NULL_SIZE, null, null, new RecordHeaders());
+			}
+			catch(Exception e)
+			{
+				record = new ConsumerRecord<>("", -1, -1, -1, TimestampType.NO_TIMESTAMP_TYPE, null, ConsumerRecord.NULL_SIZE, 
+						ConsumerRecord.NULL_SIZE, null, null, new RecordHeaders());
+
+				log.error("Exception while creting ConsumerRecord  " + e,e);
+			}
+			TopicPartition tp = new TopicPartition(topic, partition);
+			if(tp != null && partition != -1) {
+				//Changes for 2.8.1
+				try {
+					subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+				}
+				catch(IllegalStateException isE)
+				{
+					if(metadata.getDBMajorVersion() < 23)
+					{
+						// Partition assigned by TEQ Server not through JoinGroup/Sync
+						subscriptions.assignFromSubscribed( Collections.singleton(tp));
+						subscriptions.seek(tp,0);
+						subscriptions.completeValidation(tp);
+						subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+					}
+					subscriptions.position(tp, new FetchPosition(record.offset(), Optional.empty(), new LeaderAndEpoch(Optional.empty(), Optional.empty())));
+				}				
+				catch(Exception e)
+				{
+					log.error("Exception while setting fetch position " + e , e);
+					e.printStackTrace();
+				}
+				/*
+       		OffsetAndMetadata offset = subscriptions.allConsumed().get(tp);
+           	if(offset == null) 
+           		subscriptions.allConsumed().put(tp , new OffsetAndMetadata(record.offset()));
+           	else {
+           		if(offset.offset() < record.offset()) 
+           			subscriptions.allConsumed().put(tp , new OffsetAndMetadata(record.offset()));
+           	}
+				 */
+			}
+
+			if(!consumerRecords.containsKey(tp)) 
+				consumerRecords.put(tp, new ArrayList<ConsumerRecord<K,V>>());
+			consumerRecords.get(tp).add(record);
+
+		}
+		return consumerRecords;
+	}
 
 	private long remainingTimeAtLeastZero(final long timeoutMs, final long elapsedTime) {
 		return Math.max(0, timeoutMs - elapsedTime);
@@ -1013,10 +1188,10 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		acquireAndEnsureOpen();
 		try {
 			log.debug("Seeking to offset {} for partition {}", offset, partition);
-		    Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>();
+			Map<TopicPartition, Long> offsetResetTimestamps = new HashMap<>();
 			offsetResetTimestamps.put(partition, offset);
 			client.resetOffsetsSync(offsetResetTimestamps, offset);
-			
+
 		} finally {
 			release();
 		}
@@ -1334,7 +1509,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		/*Changes for 2.8.1 : Not sure from where TO_OFFSET was introduced. 
         else if (strategy == OffsetResetStrategy.TO_OFFSET)
         	return subscriptions.position(partition);
-         */ 
+		 */ 
 		else
 			return null;
 	}
@@ -1371,8 +1546,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		if (refcount.decrementAndGet() == 0)
 			currentThread.set(NO_CURRENT_THREAD);
 	}
-	
-	
+
+
 
 	@Override
 	public void seek(TopicPartition partition, OffsetAndMetadata offsetAndMetadata) {

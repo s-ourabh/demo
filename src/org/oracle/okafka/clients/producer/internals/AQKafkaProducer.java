@@ -63,6 +63,7 @@ public final class AQKafkaProducer extends AQClient {
 	private final ProducerConfig configs;
 	private final Time time;
 	private Metadata metadata; 
+	private final int DLENGTH_SIZE = 4;
 	public AQKafkaProducer(LogContext logContext, ProducerConfig configs, Time time, Metadata _metadata)
 	{   
 		super(logContext.logger(AQKafkaProducer.class), configs);
@@ -128,7 +129,8 @@ public final class AQKafkaProducer extends AQClient {
 		boolean disconnected = false;
 		TopicPublishers allPublishers = null;
 		TopicPublisher publisher = null;
-		int retryCnt = 2; //
+		int retryCnt = 2; 
+		AQjmsBytesMessage byteMessage  = null;
 		do
 		{
 			disconnected = false;
@@ -145,8 +147,9 @@ public final class AQKafkaProducer extends AQClient {
 				while(mutableRecordBatchIterator.hasNext()) {
 					Iterator<Record>  recordIterator = mutableRecordBatchIterator.next().iterator();
 					while(recordIterator.hasNext()) {
-						Record record = recordIterator.next();									
-						messages.add(createBytesMessage(session, topicPartition, record.key(), record.value(), record.headers()));	
+						Record record = recordIterator.next();
+						byteMessage = createBytesMessage(session, topicPartition, record.key(), record.value(), record.headers());
+						messages.add(byteMessage);	
 					}
 				}
 
@@ -158,7 +161,7 @@ public final class AQKafkaProducer extends AQClient {
 				log.trace("Messages sent successfully to topic : {} with partition: {}, number of messages: {}", topicPartition.topic(), topicPartition.partition(), msgs.length);
 				retryCnt = 0;
 			}
-		/*	catch(NullPointerException nlp)
+			/*	catch(NullPointerException nlp)
 			{
 				partitionResponse =  createResponses(topicPartition, (RuntimeException)nlp, msgs);
 				retryCnt = 0;
@@ -170,7 +173,7 @@ public final class AQKafkaProducer extends AQClient {
 
 				if ( e instanceof JMSException) {
 					log.info(" Encountered AQJMS Exception with error code " + ((AQjmsException)e).getErrorNumber() );
-					
+
 					if( ((AQjmsException)e).getErrorNumber() == 25348 )
 					{
 						log.debug("Causing NotLeaderForPartitionException ");
@@ -185,9 +188,9 @@ public final class AQKafkaProducer extends AQClient {
 					if(!connected)
 					{
 						try {
-							
+
 							nodePublishers.close();
-							
+
 							if(retryCnt > 0)
 							{
 								log.info("Reconnecting to node " + node);
@@ -196,7 +199,7 @@ public final class AQKafkaProducer extends AQClient {
 								disconnected = true;
 								log.info("Disconnected. Failing the batch");
 							}
-							
+
 						}catch(Exception reConnException)
 						{
 							log.error("Exception while reconnecting to node " + node , reConnException);
@@ -206,7 +209,7 @@ public final class AQKafkaProducer extends AQClient {
 								// Close again just to be sure that we are not leaking connections.
 								nodePublishers.close();  
 							}catch(Exception ignoreExcp) {}
-							
+
 							topicPublishersMap.remove(node);
 							log.trace("Connection with node {} is closed", request.destination());
 							String exceptionMsg = "Database instance not reachable: " + node;
@@ -221,10 +224,10 @@ public final class AQKafkaProducer extends AQClient {
 				}
 			}
 		}while(retryCnt > 0);
-		
+
 		if( partitionResponse == null)
 			partitionResponse = createResponses(topicPartition, null, msgs);	
-		
+
 		return createClientResponse(request, topicPartition, partitionResponse, disconnected);
 
 	}
@@ -250,21 +253,132 @@ public final class AQKafkaProducer extends AQClient {
 	/**
 	 * Creates AQjmsBytesMessage from ByteBuffer's key, value and headers
 	 */
-	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
+	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, 
+			ByteBuffer key, ByteBuffer value, Header[] headers, boolean obsolete ) throws JMSException {
 		AQjmsBytesMessage msg=null;
 		msg = (AQjmsBytesMessage)(session.createBytesMessage());
-		
+
 		if(key!=null) {
-		byte[] keyByteArray  = new byte[key.limit()];
-		key.get(keyByteArray);
-		msg.setJMSCorrelationID(new String(keyByteArray));
+			byte[] keyByteArray  = new byte[key.limit()];
+			key.get(keyByteArray);
+			msg.setJMSCorrelationID(new String(keyByteArray));
 		}
 		byte[] payload = new byte[value.limit()];
 		value.get(payload);
 		msg.writeBytes(payload);
 		payload = null;
 		msg.setStringProperty("topic", topicPartition.topic());
-		msg.setStringProperty("AQINTERNAL_PARTITION", Integer.toString(topicPartition.partition()*2));
+		msg.setStringProperty(AQClient.PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
+
+		return msg;
+	}
+
+	/*
+	 * Construct Byte Payload in below format:
+	 * | KEY LENGTH (4 Bytes Fixed)          | KEY   |
+	 * | VALUE LENGTH (4 BYTES FIXED)        | VALUE |
+	 * | HEADER NAME LENGTH(4 BYTES FIXED)   | HEADER NAME |
+	 * | HEADER VALUE LENGTH (4 BYTES FIXED) | HEADER VALUE |
+	 * | HEADER NAME LENGTH(4 BYTES FIXED)   | HEADER NAME |
+	 * | HEADER VALUE LENGTH (4 BYTES FIXED) | HEADER VALUE |
+	 * 
+	 * For records with null key , KEY LENGTH is set to 0.
+	 * For records with null value, VALUE LENGTH is set to 0.
+	 * Number of headers are set in property "AQINTERNAL_HEADERCOUNT"
+	 * 
+	 * 	*/
+	
+	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, 
+			ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
+
+		AQjmsBytesMessage msg=null;
+		int keyLen = 0;
+		int valueLen =0;
+
+		int hKeysLen[] = null;
+		int hValuesLen[] = null;
+		
+		byte[] keyByteArray  = null;
+		byte[] valueByteArray = null;
+		
+		
+		if(headers != null)
+		{
+			hKeysLen = new int[headers.length];
+			hValuesLen = new int[headers.length];
+		}
+
+		msg = (AQjmsBytesMessage)(session.createBytesMessage());
+
+		int totalSize = 0;
+		if(key != null) {
+			
+			keyByteArray =  new byte[key.limit()];
+			key.get(keyByteArray);
+			keyLen = keyByteArray.length;
+		}
+	
+		totalSize += (keyLen + DLENGTH_SIZE );
+		
+		if(value != null) {
+			valueByteArray = new byte[value.limit()];
+			value.get(valueByteArray);
+			valueLen = valueByteArray.length;
+			
+		}
+		totalSize += (valueLen + DLENGTH_SIZE);
+		
+		if(headers != null) {
+			int hIndex = 0;
+			for(Header h:headers)
+			{
+				int hKeyLen = h.key().getBytes().length;
+				totalSize += (hKeyLen + DLENGTH_SIZE);
+				hKeysLen[hIndex] = hKeyLen;
+				int hValueLength = h.value().length;
+				totalSize += (hValueLength +DLENGTH_SIZE);
+				hValuesLen[hIndex++] = hValueLength;
+			}
+		}
+		ByteBuffer pBuffer = ByteBuffer.allocate(totalSize);
+
+		//If Key is null Put Length = 0
+		pBuffer.put(ConnectionUtils.convertTo4Byte(keyLen));
+		if(keyLen > 0) {
+			pBuffer.put(keyByteArray);
+			msg.setJMSCorrelationID(new String(keyByteArray));
+		}
+		//If Value is null then put length = 0
+		pBuffer.put(ConnectionUtils.convertTo4Byte(valueLen));
+		if(valueLen > 0)
+		{
+			pBuffer.put(valueByteArray);
+		}
+
+		if(headers != null)
+		{
+			int hIndex = 0;
+			for(Header h : headers)
+			{
+				pBuffer.put(ConnectionUtils.convertTo4Byte(hKeysLen[hIndex]));
+				pBuffer.put(h.key().getBytes());
+				pBuffer.put(ConnectionUtils.convertTo4Byte(hValuesLen[hIndex++]));
+				pBuffer.put(h.value());
+			}
+		}
+		
+		pBuffer.rewind();
+		byte[] payload = new byte[pBuffer.limit()];
+		pBuffer.get(payload);
+		msg.writeBytes(payload);
+		payload = null;
+		msg.setStringProperty(PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
+		if(headers !=null)
+		{
+			msg.setIntProperty(HEADERCOUNT_PROPERTY, headers.length);
+		}
+		msg.setBooleanProperty(PARSEPAYLOAD_PROPERTY, true);
+
 		return msg;
 	}
 
@@ -275,7 +389,7 @@ public final class AQKafkaProducer extends AQClient {
 		int iter=0;
 		//Map<TopicPartition, ProduceResponse.PartitionResponse> responses = new HashMap<>();
 		ProduceResponse.PartitionResponse response =new ProduceResponse.PartitionResponse(exception);
-		
+
 		if(exception == null) {
 			response.msgIds = new ArrayList<>();
 			//response.logAppendTime = new ArrayList<>();
@@ -353,10 +467,10 @@ public final class AQKafkaProducer extends AQClient {
 						conn = ((AQjmsSession)tPublishers.getSession()).getDBConnection();
 					}
 				}
-				
-				log.info("Sender not connected to any node. Re-connecting.");
+
 				if(conn == null)
 				{
+					log.info("Sender not connected to any node. Re-connecting.");
 					List<Node> clusterNodes = NetworkClient.convertToOracleNodes(metadata.fetch().nodes());
 					for(Node n : clusterNodes)
 					{
@@ -461,17 +575,17 @@ public final class AQKafkaProducer extends AQClient {
 				String serviceName = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("SERVICE_NAME");
 				String instanceName = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("INSTANCE_NAME");
 				String user = oConn.getMetaData().getUserName();
-				
+
 				try {
-        			String sessionId = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SESSION_ID");
-        			String serialNum = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERIAL_NUM");
-        			String serverPid = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERVER_PID");
-        		
-        			log.info("Database Producer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid +" Instance Name "+instanceName);
-        		}catch(Exception ignoreE)
-        		{
-        		}
-				
+					String sessionId = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SESSION_ID");
+					String serialNum = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERIAL_NUM");
+					String serverPid = ((oracle.jdbc.internal.OracleConnection)oConn).getServerSessionInfo().getProperty("AUTH_SERVER_PID");
+
+					log.info("Database Producer Session Info: "+ sessionId +","+serialNum+". Process Id " + serverPid +" Instance Name "+instanceName);
+				}catch(Exception ignoreE)
+				{
+				}
+
 				node.setId(instId);
 				node.setService(serviceName);
 				node.setInstanceName(instanceName);
@@ -587,7 +701,7 @@ public final class AQKafkaProducer extends AQClient {
 				log.error("Exception "+ e +" while re-creating publishers for topic for node" + node );
 			}
 			isAlive = true;
-			
+
 			return isAlive;
 		}
 

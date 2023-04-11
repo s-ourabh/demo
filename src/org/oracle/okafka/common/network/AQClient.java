@@ -44,6 +44,11 @@ public abstract class AQClient {
 	
 	protected final Logger log ;
 	private final AbstractConfig configs;
+	
+	public static final String PARTITION_PROPERTY = "AQINTERNAL_PARTITION";
+	public static final String HEADERCOUNT_PROPERTY = "AQINTERNAL_HEADERCOUNT";
+	public static final String PARSEPAYLOAD_PROPERTY = "AQINTERNAL_PARSEPAYLOAD";
+	
 	public AQClient(Logger log, AbstractConfig configs) {
 		this.log = log;
 		this.configs = configs;
