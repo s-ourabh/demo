@@ -76,7 +76,7 @@ public class CreateTopics {
 		 try {		 
 			 String topic;
 			 TopicDetails details;
-			 long retentionSec = 0l;
+			 long retentionSec = 7*24*3600;
 			 for(Map.Entry<String, TopicDetails> topicDetails : topics.entrySet()) {
 				 topic = topicDetails.getKey().trim();
 				 details = topicDetails.getValue();
