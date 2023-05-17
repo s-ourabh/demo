@@ -47,6 +47,9 @@ public abstract class AQClient {
 	protected final Logger log ;
 	private final AbstractConfig configs;
 	private Map<Integer, Timestamp> instances;
+	public List<Node> all_nodes = new ArrayList<>();
+	public List<PartitionInfo> partitionInfoList = new ArrayList<>();
+	
 	public static final String PARTITION_PROPERTY = "AQINTERNAL_PARTITION";
 	public static final String HEADERCOUNT_PROPERTY = "AQINTERNAL_HEADERCOUNT";
 	public static final String PARSEPAYLOAD_PROPERTY = "AQINTERNAL_PARSEPAYLOAD";
@@ -95,7 +98,7 @@ public abstract class AQClient {
 			
 			if(nodes.size() > 0)					
 			    getPartitionInfo(metadataRequest.topics(), metadataTopics, con, nodes, metadataRequest.allowAutoTopicCreation(), partitionInfo, errorsPerTopic);
-			
+				
 		} catch(Exception exception) {
 			log.error("Exception while getting metadata "+ exception.getMessage() );
 			exception.printStackTrace();
@@ -123,7 +126,7 @@ public abstract class AQClient {
        }
 		return  new ClientResponse(request.makeHeader((short)1),
 				request.callback(), request.destination(), request.createdTimeMs(),
-				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, nodes, partitionInfo, errorsPerTopic));
+				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, all_nodes, partitionInfoList, errorsPerTopic));
 		
 	}
 	
@@ -176,7 +179,7 @@ public abstract class AQClient {
 			}
 			
 			if (FurtherMetadataUpdate || metadataRequested) {
-		
+				
 			query = "select inst_id, TYPE, value from gv$listener_network order by inst_id";
 			result = stmt.executeQuery(query);
 			Map<Integer, ArrayList<String>> services = new HashMap<>();
@@ -258,6 +261,7 @@ public abstract class AQClient {
 						log.debug("New Node created: " + newNode);
 						newNode.updateHashCode();
 						nodes.add(newNode);
+						all_nodes = nodes;
 					}
 				}
 				log.debug("Exploring hosts of the cluster. #Nodes " + nodes.size());
@@ -411,6 +415,7 @@ private void getPartitionInfo(List<String> topics, List<String> topicsRem, Conne
 		    	}
 			}
 		}
+		partitionInfoList = partitionInfo;
 		} finally {
 			try {
 				if(stmt1 != null) 

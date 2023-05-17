@@ -574,7 +574,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		//System.out.println("TEQAssignor: MetaDataNow received");
 		if(response.wasDisconnected()) {
 			topicConsumersMap.remove(node);
-			metadata.updateRequested();
+			metadata.requestUpdate();
 		}
 		return response;
 	}
