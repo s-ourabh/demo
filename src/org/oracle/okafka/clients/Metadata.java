@@ -293,17 +293,49 @@ public final class Metadata implements Closeable {
 
 		for (Listener listener: listeners)
 			listener.onMetadataUpdate(newCluster, unavailableTopics);
-
+		
 		String previousClusterId = cluster.clusterResource().clusterId();
 		Node newLeaderNode = null;
+		
+		newLeaderNode = getLeaderNode(this.cluster, newCluster); 
+		
+		/* If a node previously present is not available in newCluster, then
+		 * we still want to keep it because 
+		 * existing nodes may go down and at the same time previously disconnected nodes may come up */
+		ArrayList<org.apache.kafka.common.Node> newClusterNodes = new ArrayList<org.apache.kafka.common.Node>();
+		newClusterNodes.addAll(newCluster.nodes());
+		
+		boolean oldNodesAdded = false;
+		for(org.apache.kafka.common.Node oldNode : cluster.nodes())
+		{
+			org.apache.kafka.common.Node nodeById = newCluster.nodeById(oldNode.id());
+			if(nodeById == null)
+			{
+				newClusterNodes.add(oldNode);
+				//newCluster.nodes().add(oldNode);
+				oldNodesAdded = true;
+				//new Cluster(clusterId, cluster.nodes(), partitionInfos, unauthorizedTopics, internalTopics, controller);
+				
+				log.info("Added Down Node  " + oldNode );
+				
+			}		
+		}
+		if(oldNodesAdded)
+		{
+			// Create a new cluster with All previous and current Node. 
+			// Maintain the PartitionInfo of the latest cluster
+			Cluster newClusterWithOldNodes = getClusterForCurrentTopics(newCluster, newClusterNodes);
+			newCluster = newClusterWithOldNodes;
+		}
+		
 		if (this.needMetadataForAllTopics) {
+			log.debug("needMetadataForAllTopics = " + needMetadataForAllTopics);
+		
 			// the listener may change the interested topics, which could cause another metadata refresh.
 			// If we have already fetched all topics, however, another fetch should be unnecessary.
 			this.needUpdate = false;
-			newLeaderNode = getLeaderNode(this.cluster, newCluster);            
-			this.cluster = getClusterForCurrentTopics(newCluster);
+			this.cluster = getClusterForCurrentTopics(newCluster, null);
 		} else {
-			newLeaderNode = getLeaderNode(this.cluster, newCluster);
 			this.cluster = newCluster;
 		}
 		//Changes for 2.8.1:
@@ -514,10 +546,14 @@ public final class Metadata implements Closeable {
 		requestUpdate();
 	}
 
-	private Cluster getClusterForCurrentTopics(Cluster cluster) {
+	private Cluster getClusterForCurrentTopics(Cluster cluster, List<org.apache.kafka.common.Node> newNodeList) {
 		Set<String> unauthorizedTopics = new HashSet<>();
+		
 		Collection<PartitionInfo> partitionInfos = new ArrayList<>();
-		List<Node> nodes = Collections.emptyList();
+		
+		if(newNodeList == null)
+			newNodeList = cluster.nodes();
+		
 		Set<String> internalTopics = Collections.emptySet();
 		Node controller = null;
 		String clusterId = null;
@@ -535,7 +571,7 @@ public final class Metadata implements Closeable {
 			}
 			controller  = (org.oracle.okafka.common.Node)cluster.controller();
 		}
-		return new Cluster(clusterId, cluster.nodes(), partitionInfos, unauthorizedTopics, internalTopics, controller);//, cluster.getConfigs());
+		return new Cluster(clusterId, newNodeList, partitionInfos, unauthorizedTopics, internalTopics, controller);//, cluster.getConfigs());
 	}
 
 	/*public synchronized long getUpdate(String topic,Integer partition, long maxWaitMs) {

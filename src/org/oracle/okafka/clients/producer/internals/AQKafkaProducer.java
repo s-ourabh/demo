@@ -479,6 +479,7 @@ public final class AQKafkaProducer extends AQClient {
 							log.info("Attempting to connect to " + n);
 							conn = ((AQjmsSession)topicPublishersMap.get(n).getSession()).getDBConnection();
 							log.info("Connected to node " + n);
+							node = n;
 							break;
 						}catch(Exception e)
 						{
@@ -499,7 +500,7 @@ public final class AQKafkaProducer extends AQClient {
 			}
 		}
 
-		ClientResponse response = getMetadataNow(request, conn);
+		ClientResponse response = getMetadataNow(request, conn, node);
 		if(response.wasDisconnected()) 
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
 		return response;
