@@ -172,9 +172,9 @@ public final class AQKafkaProducer extends AQClient {
 				log.error("Exception while sending records for topic partition " + topicPartition + " no node " + node , e);
 
 				if ( e instanceof JMSException) {
-					log.info(" Encountered AQJMS Exception with error code " + ((AQjmsException)e).getErrorNumber() );
+					log.info(" Encountered JMS Exception:" + e.getMessage() );
 
-					if( ((AQjmsException)e).getErrorNumber() == 25348 )
+					if( (e instanceof AQjmsException ) && ((AQjmsException)e).getErrorNumber() == 25348 )
 					{
 						log.debug("Causing NotLeaderForPartitionException ");
 						partitionResponse =  createResponses(topicPartition, new NotLeaderForPartitionException(e), msgs);  

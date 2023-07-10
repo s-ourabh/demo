@@ -78,6 +78,7 @@ public abstract class AQClient {
 		try {
 			if(con == null)
 			{
+				disconnected = true;
 				throw new NullPointerException("Database connection to fetch metadata is null");
 			}
 			//Database Name to be set as Cluster ID
@@ -95,22 +96,22 @@ public abstract class AQClient {
 						nodes, metadataRequest.allowAutoTopicCreation(), partitionInfo, errorsPerTopic);
 
 		} catch(Exception exception) {
-			log.error("Exception while getting metadata "+ exception.getMessage() );
-			exception.printStackTrace();
+			log.error("Exception while getting metadata "+ exception.getMessage(), exception );
+			//exception.printStackTrace();
 
 			if(exception instanceof SQLException) 
 				if(((SQLException)exception).getErrorCode() == 6550) {
-					log.error("execute on dbms_aqadm is not granted", ((SQLException)exception).getMessage());
-					log.info("create session, execute on dbms_aqin, dbms_aqadm , dbms_aqjms privileges required for producer or consumer to work");
+					log.error("Not all privileges granted to the database user.", ((SQLException)exception).getMessage());
+					log.info("Please grant all the documented privileges to database user.");
 				}
 			if(exception instanceof SQLSyntaxErrorException)
-				log.trace("Please grant select on gv_$instance , gv_$listener_network, user_queues and user_queue_shards.");
+				log.trace("Please grant all the documented privileges to database user.");
 			for(String topic : metadataTopics) {
 				errorsPerTopic.put(topic, exception);
 			}
-			disconnected = true;			
+			disconnected = true;
 			try {
-				log.trace("Unexcepted error occured with connection to node {}, closing the connection", request.destination());
+				log.debug("Unexcepted error occured with connection to node {}, closing the connection", request.destination());
 				if(con != null)
 					con.close();
 
