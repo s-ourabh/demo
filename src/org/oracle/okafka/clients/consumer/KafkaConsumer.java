@@ -905,7 +905,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 		ConsumerRecord<K, V> record;
 		String topic = null;
 		int partition = -1;
-		boolean parsePayload = false;
+		int messageVersion = 1;
 		byte[] keyArray = null;
 		byte[] valueArray = null;
 		int keyLen =0;
@@ -920,10 +920,10 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 			try {
 				RecordHeaders rcH = new RecordHeaders();
 				try {
-					parsePayload= message.getBooleanProperty(AQClient.PARSEPAYLOAD_PROPERTY);
+					messageVersion = message.getIntProperty(AQClient.MESSAGE_VERSION);
 				}catch(Exception e)
 				{
-					parsePayload = false;
+					messageVersion = 1;
 				}
 
 				/*
@@ -940,7 +940,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 				 * Number of headers are set in property "AQINTERNAL_HEADERCOUNT"
 				 * 
 				 * 	*/
-				if(parsePayload)
+				if(messageVersion == 2)
 				{
 					byte[] payloadArray = message.getBytesData(); 
 					byte[] bLength = new byte[DLENGTH_SIZE];
