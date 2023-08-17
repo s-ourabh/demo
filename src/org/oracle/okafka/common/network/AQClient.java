@@ -46,7 +46,7 @@ public abstract class AQClient {
 	
 	protected final Logger log ;
 	private final AbstractConfig configs;
-	private Map<Integer, Timestamp> instances;
+	private Map<Integer, Timestamp> instancesTostarttime;
 	public List<Node> all_nodes = new ArrayList<>();
 	public List<PartitionInfo> partitionInfoList = new ArrayList<>();
 	
@@ -135,7 +135,7 @@ public abstract class AQClient {
 		Statement stmt = null;
 		ResultSet result = null;
 		String user = "";
-		boolean FurtherMetadataUpdate = false;
+		boolean furtherMetadata = false;
 		try {
 			user = con.getMetaData().getUserName();
 			stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
@@ -147,13 +147,10 @@ public abstract class AQClient {
 			while(result.next()) {
 				int instId = result.getInt(1);
 				String instName = result.getString(2);
-				
 				instance_names.put(instId, instName);
 				Date startup_time = result.getDate(3);
 				Timestamp ts=new Timestamp(startup_time.getTime());
-				instance_names.put(instId, instName);
 				instance_startTimes.put(instId, ts);
-
 			}
 			result.close();
 			result = null;
@@ -173,12 +170,12 @@ public abstract class AQClient {
 			//int connectedInst = connectedNode !=null?connectedNode.id():-1;
 			
 			
-			if(!instance_startTimes.equals(instances)) {
-				instances = instance_startTimes;
-				FurtherMetadataUpdate = true;
+			if(!instance_startTimes.equals(instancesTostarttime)) {
+				instancesTostarttime = instance_startTimes;
+				furtherMetadata = true;
 			}
 			
-			if (FurtherMetadataUpdate || metadataRequested) {
+			if (furtherMetadata || metadataRequested) {
 				
 			query = "select inst_id, TYPE, value from gv$listener_network order by inst_id";
 			result = stmt.executeQuery(query);
