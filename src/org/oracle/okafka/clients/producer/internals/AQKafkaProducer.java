@@ -179,6 +179,7 @@ public final class AQKafkaProducer extends AQClient {
 						log.debug("Causing NotLeaderForPartitionException ");
 						partitionResponse =  createResponses(topicPartition, new NotLeaderForPartitionException(e), msgs);  
 						retryCnt =0;
+						this.metadata.requestUpdate();
 						break;
 					}					
 				}				
@@ -499,9 +500,10 @@ public final class AQKafkaProducer extends AQClient {
 			}
 		}
 
-		ClientResponse response = getMetadataNow(request, conn);
+		ClientResponse response = getMetadataNow(request, conn, metadata.updateRequested());
 		if(response.wasDisconnected()) 
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
+		    metadata.requestUpdate();
 		return response;
 	}
 
