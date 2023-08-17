@@ -34,6 +34,8 @@ import org.oracle.okafka.common.requests.CreateTopicsRequest.TopicDetails;
 import org.oracle.okafka.common.utils.ConnectionUtils;
 import org.oracle.okafka.common.utils.CreateTopics;
 import org.slf4j.Logger;
+import java.sql.Timestamp;
+import java.sql.Date;
 
 import javax.jms.JMSException;
 import oracle.jdbc.OracleTypes;
@@ -44,7 +46,11 @@ public abstract class AQClient {
 
 	protected final Logger log ;
 	private final AbstractConfig configs;
-
+	
+	private Map<Integer, Timestamp> instancesTostarttime;
+	public List<Node> all_nodes = new ArrayList<>();
+	public List<PartitionInfo> partitionInfoList = new ArrayList<>();
+	
 	public static final String PARTITION_PROPERTY = "AQINTERNAL_PARTITION";
 	public static final String HEADERCOUNT_PROPERTY = "AQINTERNAL_HEADERCOUNT";
 	public static final String PARSEPAYLOAD_PROPERTY = "AQINTERNAL_PARSEPAYLOAD";
@@ -62,9 +68,9 @@ public abstract class AQClient {
 	public abstract void close(Node node);
 
 	public abstract void close();
-
-	public ClientResponse getMetadataNow(ClientRequest request, Connection con, Node currentNode) {
-
+	
+	public ClientResponse getMetadataNow(ClientRequest request, Connection con, Node currentNode, boolean metadataRequested) {
+		
 		log.debug("Getting Metadata now");
 
 		MetadataRequest.Builder builder= (MetadataRequest.Builder)request.requestBuilder();
@@ -84,17 +90,17 @@ public abstract class AQClient {
 			//Database Name to be set as Cluster ID
 			clusterId = ((oracle.jdbc.internal.OracleConnection)con).getServerSessionInfo().getProperty("DATABASE_NAME");
 			//Get Instances
-			getNodes(nodes, con, currentNode); 
+			getNodes(nodes, con, currentNode, metadataRequested); 
 			log.debug("Exploring hosts of the cluster. #Nodes " + nodes.size());
 			for(Node nodeNow : nodes)
 			{	
 				log.debug("DB Instance: " + nodeNow);
 			}
 
+
 			if(nodes.size() > 0)					
 				getPartitionInfo(metadataRequest.topics(), metadataTopics, con,
 						nodes, metadataRequest.allowAutoTopicCreation(), partitionInfo, errorsPerTopic);
-
 		} catch(Exception exception) {
 			log.error("Exception while getting metadata "+ exception.getMessage(), exception );
 			//exception.printStackTrace();
@@ -123,30 +129,33 @@ public abstract class AQClient {
 		return  new ClientResponse(request.makeHeader((short)1),
 				request.callback(), request.destination(), request.createdTimeMs(),
 				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, nodes, partitionInfo, errorsPerTopic));
-
 	}
 
-
-	private void getNodes(List<Node> nodes, Connection con, Node connectedNode) throws SQLException {
+	private void getNodes(List<Node> nodes, Connection con, Node connectedNode, boolean metadataRequested) throws SQLException {
 		Statement stmt = null;
 		ResultSet result = null;
 		String user = "";
+		boolean furtherMetadata = false;
 		try {
 			user = con.getMetaData().getUserName();
 			stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
-			String query = "select inst_id, instance_name from gv$instance";
+			String query = "select inst_id, instance_name, startup_time  from gv$instance";
 			result = stmt.executeQuery(query);
-			Map<Integer, String> instances = new HashMap<>();
+			Map<Integer, String> instance_names = new HashMap<>();
+			Map<Integer, Timestamp> instance_startTimes = new HashMap<>();
+
 			while(result.next()) {
 				int instId = result.getInt(1);
 				String instName = result.getString(2);
-
-				instances.put(instId, instName);
+				instance_names.put(instId, instName);
+				Date startup_time = result.getDate(3);
+				Timestamp ts=new Timestamp(startup_time.getTime());
+				instance_startTimes.put(instId, ts);
 			}
 			result.close();
 			result = null;
-
-			if (instances.size()==1)
+			
+			if (instance_names.size()==1)
 			{
 				//Connected Node is :
 				//Node connectedNode = getNodeToThisConnection(con);
@@ -157,87 +166,101 @@ public abstract class AQClient {
 				}
 			}
 
-			query = "select inst_id, TYPE, value from gv$listener_network order by inst_id";
-			result = stmt.executeQuery(query);
-			Map<Integer, ArrayList<String>> services = new HashMap<>();
-			Map<Integer,ArrayList<String>> localListenersMap = new HashMap<>();
+			if(!instance_startTimes.equals(instancesTostarttime)) {
+				instancesTostarttime = instance_startTimes;
+				furtherMetadata = true;
+			}
+			
+			if (furtherMetadata || metadataRequested) {
 
-			String security = configs.getString(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG);
-			String preferredService = configs.getString(CommonClientConfigs.ORACLE_SERVICE_NAME);
+				query = "select inst_id, TYPE, value from gv$listener_network order by inst_id";
+				result = stmt.executeQuery(query);
+				Map<Integer, ArrayList<String>> services = new HashMap<>();
+				Map<Integer,ArrayList<String>> localListenersMap = new HashMap<>();
 
-			boolean plainText = security.equalsIgnoreCase("PLAINTEXT")?true:false;
+				String security = configs.getString(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG);
+				String preferredService = configs.getString(CommonClientConfigs.ORACLE_SERVICE_NAME);
 
-			while(result.next()) {
-				int instId = result.getInt(1);
-				String type = result.getString(2);
-				String value = result.getString(3);
+				boolean plainText = security.equalsIgnoreCase("PLAINTEXT")?true:false;
 
-				if(type.equalsIgnoreCase("SERVICE NAME")) {
-					ArrayList<String> servicesList = services.get(instId);
-					if(servicesList == null)
+				while(result.next()) {
+					int instId = result.getInt(1);
+					String type = result.getString(2);
+					String value = result.getString(3);
+
+					if(type.equalsIgnoreCase("SERVICE NAME")) {
+						ArrayList<String> servicesList = services.get(instId);
+						if(servicesList == null)
+						{
+							servicesList = new ArrayList<String>();
+							services.put(instId,servicesList);
+						}
+						if(preferredService != null && value.equalsIgnoreCase(preferredService))
+						{
+							log.debug("Found Preferred Services " + value);
+							servicesList.add(0, value);
+						}
+						else {
+							servicesList.add(value);
+						}
+					}
+					else if(type.equalsIgnoreCase("LOCAL LISTENER"))
 					{
-						servicesList = new ArrayList<String>();
-						services.put(instId,servicesList);
+						ArrayList<String> localListenerList =  localListenersMap.get(instId);
+						if(localListenerList == null)
+						{
+							localListenerList = new ArrayList<String>();
+							localListenersMap.put(instId, localListenerList);
+						}
+						localListenerList.add(value);
 					}
-					if(preferredService != null && value.equalsIgnoreCase(preferredService))
-					{
-						log.debug("Found Preferred Services " + value);
-						servicesList.add(0, value);
-					}
-					else {
-						servicesList.add(value);
-					}
-				}
-				else if(type.equalsIgnoreCase("LOCAL LISTENER"))
+				} //Result set Parsed
+				result.close();
+				result = null;
+
+				for(Integer instIdNow : instance_names.keySet())
 				{
-					ArrayList<String> localListenerList =  localListenersMap.get(instId);
-					if(localListenerList == null)
-					{
-						localListenerList = new ArrayList<String>();
-						localListenersMap.put(instId, localListenerList);
-					}
-					localListenerList.add(value);
-				}
-			} //Result set Parsed
-			result.close();
-			result = null;
-
-			for(Integer instIdNow : instances.keySet())
-			{
-				/*if( instIdNow.intValue() == connectedInst)
+					/*if( instIdNow.intValue() == connectedInst)
 					continue; */
 
-				log.debug("Processing metadata for instance: " + instIdNow);
+					log.debug("Processing metadata for instance: " + instIdNow);
 
-				ArrayList<String> localListenerList = localListenersMap.get(instIdNow);
-				for(String localListenerNow : localListenerList)
-				{
-					log.debug("Processing Local Listener " + localListenerNow);
-					String str = localListenerNow;
-					//AdHoc processing of LISTENER STRING 
-					StringBuilder sb = new StringBuilder();
-
-					for(int ind = 0;ind < str.length(); ind++)
-						if(str.charAt(ind) != ' ')
-							sb.append(str.charAt(ind));
-
-					str = sb.toString();
-					String protocolNow = getProperty(str,"PROTOCOL");
-					log.debug("Protocol used by this local listener " + protocolNow);
-
-					if( (plainText && protocolNow.equalsIgnoreCase("TCP")) || 
-							(!plainText && protocolNow.equalsIgnoreCase("TCPS")))
+					ArrayList<String> localListenerList = localListenersMap.get(instIdNow);
+					for(String localListenerNow : localListenerList)
 					{
-						String host = getProperty(str, "HOST");;
-						Integer port = Integer.parseInt(getProperty(str, "PORT"));
-						log.debug("Hot:PORT " + host +":"+port);
+						log.debug("Processing Local Listener " + localListenerNow);
+						String str = localListenerNow;
+						//AdHoc processing of LISTENER STRING 
+						StringBuilder sb = new StringBuilder();
 
-						// ToDo: Assign Service List instead of a single Service
-						Node newNode =new Node(instIdNow, host, port, services.get(instIdNow).get(0), instances.get(instIdNow));
-						newNode.setUser(user);
-						log.debug("New Node created: " + newNode);
-						newNode.updateHashCode();
-						nodes.add(newNode);
+						for(int ind = 0;ind < str.length(); ind++)
+							if(str.charAt(ind) != ' ')
+								sb.append(str.charAt(ind));
+
+						str = sb.toString();
+						String protocolNow = getProperty(str,"PROTOCOL");
+						log.debug("Protocol used by this local listener " + protocolNow);
+
+						if( (plainText && protocolNow.equalsIgnoreCase("TCP")) || 
+								(!plainText && protocolNow.equalsIgnoreCase("TCPS")))
+						{
+							String host = getProperty(str, "HOST");;
+							Integer port = Integer.parseInt(getProperty(str, "PORT"));
+							log.debug("Hot:PORT " + host +":"+port);
+
+							// ToDo: Assign Service List instead of a single Service
+							Node newNode =new Node(instIdNow, host, port, services.get(instIdNow).get(0), instance_names.get(instIdNow));
+							newNode.setUser(user);
+							log.debug("New Node created: " + newNode);
+							newNode.updateHashCode();
+							nodes.add(newNode);
+							all_nodes = nodes;
+						}
+					}
+					log.debug("Exploring hosts of the cluster. #Nodes " + nodes.size());
+					for(Node nodeNow : nodes)
+					{	
+						log.debug("DB Instance: " + nodeNow);
 					}
 				}
 			}
@@ -431,6 +454,7 @@ public abstract class AQClient {
 					}
 				}
 			}
+
 		} finally {
 			try {
 				if(stmt1 != null) 

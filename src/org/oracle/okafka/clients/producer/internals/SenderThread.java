@@ -345,7 +345,8 @@ public class SenderThread implements Runnable {
 			RuntimeException producerException = partitionResponse.exception;
 			if(producerException instanceof  NotLeaderForPartitionException) {
 				
-				log.info("No Owner for Topoic Partition " +batch.topicPartition +" retrying.");
+				log.info("No Owner for Topic Partition " +batch.topicPartition +" retrying.");
+				this.metadata.requestUpdate();
 			}
 			else {
 				log.info("Exception while sending batch for partiton " +batch.topicPartition +". " + producerException);

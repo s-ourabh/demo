@@ -871,9 +871,12 @@ public class ConsumerNetworkClient {
 	} 
 
 	public void unsubscribe() {
+		
+		if(currentSession!=null) {
 		ClientRequest request = this.client.newClientRequest(currentSession, new UnsubscribeRequest.Builder(), time.milliseconds(), true);
 		ClientResponse response = this.client.send(request, time.milliseconds());
 		handleUnsubscribeResponse(response);
+		}
 
 	}
 

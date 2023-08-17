@@ -48,6 +48,7 @@ public class AQKafkaAdmin extends AQClient{
 	private final Time time;
 	private final Map<Node, Connection> connections;
 	private final AdminMetadataManager metadataManager;
+	private boolean forceMetadata = false;
 	
 	public AQKafkaAdmin(LogContext logContext, AdminClientConfig configs, AdminMetadataManager _metadataManager, Time time) {
 		super(logContext.logger(AQKafkaAdmin.class), configs);
@@ -212,9 +213,12 @@ public class AQKafkaAdmin extends AQClient{
 			}
 			
 		}
-		ClientResponse response = getMetadataNow(request, connections.get(node), node);
-		if(response.wasDisconnected()) 
+		ClientResponse response = getMetadataNow(request, connections.get(node), node, forceMetadata);
+		if(response.wasDisconnected()) { 
+
 			connections.remove(node);
+			forceMetadata = true;
+		}
 		
 		return response;
 	}
