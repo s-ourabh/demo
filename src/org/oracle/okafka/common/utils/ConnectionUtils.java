@@ -169,20 +169,10 @@ public class ConnectionUtils {
 	{
 		byte[] bArray = new byte[4];
 
-		ByteOrder byteOrder = ByteOrder.nativeOrder();
-		if(byteOrder == ByteOrder.LITTLE_ENDIAN)
-		{
-			bArray[0] = (byte)( len >>> 24 );
-			bArray[1] = (byte)( len >>> 16 );
-			bArray[2] = (byte)( len >>> 8 );
-			bArray[3] = (byte)( len );
-		}
-		else {
-			bArray[3] = (byte)( len >>> 24 );
-			bArray[2] = (byte)( len >>> 16 );
-			bArray[1] = (byte)( len >>> 8 );
-			bArray[0] = (byte)( len );
-		}
+		bArray[0] = (byte)( len >>> 24 );
+		bArray[1] = (byte)( len >>> 16 );
+		bArray[2] = (byte)( len >>> 8 );
+		bArray[3] = (byte)( len );
 
 		return bArray;
 	}
