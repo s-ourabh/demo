@@ -34,6 +34,8 @@ import org.oracle.okafka.common.requests.CreateTopicsRequest.TopicDetails;
 import org.oracle.okafka.common.utils.ConnectionUtils;
 import org.oracle.okafka.common.utils.CreateTopics;
 import org.slf4j.Logger;
+import java.sql.Timestamp;
+import java.sql.Date;
 
 import javax.jms.JMSException;
 import oracle.jdbc.OracleTypes;
@@ -44,6 +46,9 @@ public abstract class AQClient {
 	
 	protected final Logger log ;
 	private final AbstractConfig configs;
+	private Map<Integer, Timestamp> instancesTostarttime;
+	public List<Node> all_nodes = new ArrayList<>();
+	public List<PartitionInfo> partitionInfoList = new ArrayList<>();
 	
 	public static final String PARTITION_PROPERTY = "AQINTERNAL_PARTITION";
 	public static final String HEADERCOUNT_PROPERTY = "AQINTERNAL_HEADERCOUNT";
@@ -63,7 +68,7 @@ public abstract class AQClient {
 	
 	public abstract void close();
 	
-	public ClientResponse getMetadataNow(ClientRequest request, Connection con) {
+	public ClientResponse getMetadataNow(ClientRequest request, Connection con, boolean metadataRequested) {
 		
 		log.debug("Getting Metadata now");
 		
@@ -83,12 +88,8 @@ public abstract class AQClient {
 			//Database Name to be set as Cluster ID
 			clusterId = ((oracle.jdbc.internal.OracleConnection)con).getServerSessionInfo().getProperty("DATABASE_NAME");
 			//Get Instances
-			getNodes(nodes, con); 
-			log.debug("Exploring hosts of the cluster. #Nodes " + nodes.size());
-			for(Node nodeNow : nodes)
-			{	
-				log.debug("DB Instance: " + nodeNow);
-			}
+			getNodes(nodes, con, metadataRequested); 
+			
 			
 		/*	This should not happen. Handle it outside this class where we have handle to cluster object.
 		 * Need to do cluster.getNodeById(request.destination());
@@ -97,7 +98,7 @@ public abstract class AQClient {
 			
 			if(nodes.size() > 0)					
 			    getPartitionInfo(metadataRequest.topics(), metadataTopics, con, nodes, metadataRequest.allowAutoTopicCreation(), partitionInfo, errorsPerTopic);
-			
+				
 		} catch(Exception exception) {
 			log.error("Exception while getting metadata "+ exception.getMessage() );
 			exception.printStackTrace();
@@ -125,31 +126,36 @@ public abstract class AQClient {
        }
 		return  new ClientResponse(request.makeHeader((short)1),
 				request.callback(), request.destination(), request.createdTimeMs(),
-				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, nodes, partitionInfo, errorsPerTopic));
+				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, all_nodes, partitionInfoList, errorsPerTopic));
 		
 	}
 	
 	
-	private void getNodes(List<Node> nodes, Connection con) throws SQLException {
+	private void getNodes(List<Node> nodes, Connection con, boolean metadataRequested) throws SQLException {
 		Statement stmt = null;
 		ResultSet result = null;
 		String user = "";
+		boolean furtherMetadata = false;
 		try {
 			user = con.getMetaData().getUserName();
 			stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
-			String query = "select inst_id, instance_name from gv$instance";
+			String query = "select inst_id, instance_name, startup_time  from gv$instance";
 			result = stmt.executeQuery(query);
-			Map<Integer, String> instances = new HashMap<>();
+			Map<Integer, String> instance_names = new HashMap<>();
+			Map<Integer, Timestamp> instance_startTimes = new HashMap<>();
+
 			while(result.next()) {
 				int instId = result.getInt(1);
 				String instName = result.getString(2);
-				
-				instances.put(instId, instName);
+				instance_names.put(instId, instName);
+				Date startup_time = result.getDate(3);
+				Timestamp ts=new Timestamp(startup_time.getTime());
+				instance_startTimes.put(instId, ts);
 			}
 			result.close();
 			result = null;
 			
-			if (instances.size()==1)
+			if (instance_names.size()==1)
 			{
 
 				//Connected Node is :
@@ -163,6 +169,14 @@ public abstract class AQClient {
 
 			//int connectedInst = connectedNode !=null?connectedNode.id():-1;
 			
+			
+			if(!instance_startTimes.equals(instancesTostarttime)) {
+				instancesTostarttime = instance_startTimes;
+				furtherMetadata = true;
+			}
+			
+			if (furtherMetadata || metadataRequested) {
+				
 			query = "select inst_id, TYPE, value from gv$listener_network order by inst_id";
 			result = stmt.executeQuery(query);
 			Map<Integer, ArrayList<String>> services = new HashMap<>();
@@ -208,7 +222,7 @@ public abstract class AQClient {
 			result.close();
 			result = null;
 			
-			for(Integer instIdNow : instances.keySet())
+			for(Integer instIdNow : instance_names.keySet())
 			{
 				/*if( instIdNow.intValue() == connectedInst)
 					continue; */
@@ -239,13 +253,20 @@ public abstract class AQClient {
 						log.debug("Hot:PORT " + host +":"+port);
 						
 						// ToDo: Assign Service List instead of a single Service
-						Node newNode =new Node(instIdNow, host, port, services.get(instIdNow).get(0), instances.get(instIdNow));
+						Node newNode =new Node(instIdNow, host, port, services.get(instIdNow).get(0), instance_names.get(instIdNow));
 						newNode.setUser(user);
 						log.debug("New Node created: " + newNode);
 						newNode.updateHashCode();
 						nodes.add(newNode);
+						all_nodes = nodes;
 					}
 				}
+				log.debug("Exploring hosts of the cluster. #Nodes " + nodes.size());
+				for(Node nodeNow : nodes)
+				{	
+					log.debug("DB Instance: " + nodeNow);
+				}
+			}
 			}
 		}
 		catch(Exception e)
@@ -293,7 +314,7 @@ public abstract class AQClient {
 	}
 	
 private void getPartitionInfo(List<String> topics, List<String> topicsRem, Connection con, List<Node> nodes, boolean allowAutoTopicCreation, List<PartitionInfo> partitionInfo, Map<String, Exception> errorsPerTopic) throws Exception {
-		
+	
 	if(nodes.size() <= 0 || topics == null || topics.isEmpty())
 		return;
 
@@ -391,6 +412,7 @@ private void getPartitionInfo(List<String> topics, List<String> topicsRem, Conne
 		    	}
 			}
 		}
+		partitionInfoList = partitionInfo;
 		} finally {
 			try {
 				if(stmt1 != null) 

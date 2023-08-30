@@ -569,11 +569,12 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 				log.trace("Failed to close connection with node {}", request.destination());
 			}
 		}
-		//System.out.println("TxEQAssignor: Invoking getMetaDataNow ");
-		ClientResponse response = getMetadataNow(request, conn);
-		//System.out.println("TxEQAssignor: MetaDataNow received");
+		//System.out.println("TEQAssignor: Invoking getMetaDataNow ");
+		ClientResponse response = getMetadataNow(request, conn, metadata.updateRequested());
+		//System.out.println("TEQAssignor: MetaDataNow received");
 		if(response.wasDisconnected()) {
 			topicConsumersMap.remove(node);
+			metadata.requestUpdate();
 		}
 		return response;
 	}

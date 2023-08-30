@@ -1126,6 +1126,7 @@ public class KafkaAdminClient extends AdminClient {
 								"Cancelled %s request with correlation id %s due to node %s being disconnected",
 								call.callName, correlationId, response.destination())));
 					}
+					metadataManager.requestUpdate();
 				} else {
 					try {
 						call.handleResponse(response.responseBody());
