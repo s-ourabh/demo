@@ -381,7 +381,7 @@ public class ConsumerConfig extends AbstractConfig {
                                 .define(PARTITION_ASSIGNMENT_STRATEGY_CONFIG,
                                         Type.LIST,
                                         //Collections.singletonList(RoundRobinAssignor.class),
-                                        Collections.singletonList(TEQAssignor.class),
+                                        Collections.singletonList(TxEQAssignor.class),
                                         new ConfigDef.NonNullValidator(),
                                         Importance.MEDIUM,
                                         PARTITION_ASSIGNMENT_STRATEGY_DOC)

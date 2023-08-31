@@ -169,40 +169,20 @@ public class ConnectionUtils {
 	{
 		byte[] bArray = new byte[4];
 
-		ByteOrder byteOrder = ByteOrder.nativeOrder();
-		if(byteOrder == ByteOrder.BIG_ENDIAN)
-		{
-			bArray[0] = (byte)( len >>> 24 );
-			bArray[1] = (byte)( len >>> 16 );
-			bArray[2] = (byte)( len >>> 8 );
-			bArray[3] = (byte)( len );
-		}
-		else {
-			bArray[3] = (byte)( len >>> 24 );
-			bArray[2] = (byte)( len >>> 16 );
-			bArray[1] = (byte)( len >>> 8 );
-			bArray[0] = (byte)( len );
-		}
+		bArray[0] = (byte)( len >>> 24 );
+		bArray[1] = (byte)( len >>> 16 );
+		bArray[2] = (byte)( len >>> 8 );
+		bArray[3] = (byte)( len );
 
 		return bArray;
 	}
 
 	public static int convertToInt(byte[] bInt)
 	{
-		ByteOrder byteOrder = ByteOrder.nativeOrder();
-		if(byteOrder == ByteOrder.BIG_ENDIAN)
-		{
-			return (((bInt[0] & 0xff) << 24) | 
+		return (((bInt[0] & 0xff) << 24) | 
 				((bInt[1] & 0xff) << 16) |
 				((bInt[2] & 0xff) << 8)  |
 				(bInt[3] & 0xff));
-		}else
-		{
-			return (((bInt[3] & 0xff) << 24) | 
-					((bInt[2] & 0xff) << 16) |
-					((bInt[1] & 0xff) << 8)  |
-					(bInt[0] & 0xff));
-		}
 	}
 
 }
