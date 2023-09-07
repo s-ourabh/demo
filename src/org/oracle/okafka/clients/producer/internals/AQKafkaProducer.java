@@ -378,7 +378,8 @@ public final class AQKafkaProducer extends AQClient {
 		{
 			msg.setIntProperty(HEADERCOUNT_PROPERTY, headers.length);
 		}
-		msg.setBooleanProperty(PARSEPAYLOAD_PROPERTY, true);
+		
+	    msg.setIntProperty(MESSAGE_VERSION, 2);
 
 		return msg;
 	}

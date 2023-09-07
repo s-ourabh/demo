@@ -45,7 +45,7 @@ import org.oracle.okafka.clients.NetworkClient;
 import org.oracle.okafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.oracle.okafka.clients.consumer.TEQAssignor;
+import org.oracle.okafka.clients.consumer.TxEQAssignor;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.TopicPartition;
@@ -514,7 +514,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 	}
 	
 	private ClientResponse getMetadata(ClientRequest request) {
-		Connection conn = null;
+	    Connection conn = null;
 		Node node = null;
 		//Cluster used for this metadata is still a bootstrap cluster and does not have all necessary information
 		//Pick any random node from the bootstrap nodes and send metadata request.
@@ -884,8 +884,8 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         				}
         				
         				try {
-        					//System.out.println("TEQAssignor:Printing QPat " + qpatNow.name);
-        					//System.out.println("TEQAssignor:"+ qpatNow.toString());
+        					//System.out.println("TxEQAssignor:Printing QPat " + qpatNow.name);
+        					//System.out.println("TxEQAssignor:"+ qpatNow.toString());
         				}catch(Exception e)
         				{
         					log.error("Exception while printing qpat " + qpatNow.name + " exception: " + e.getMessage());
@@ -917,15 +917,15 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
         			log.debug("Invoking Assignors");
         			for(ConsumerPartitionAssignor assignor : assignors)
         			{
-        				if(assignor instanceof TEQAssignor)
+        				if(assignor instanceof TxEQAssignor)
         				{
         					log.debug("Using TEQ Assignor. ");
-        					TEQAssignor teqAssignor = (TEQAssignor) assignor;
-        					teqAssignor.setInstPListMap(instPListMap);
+        					TxEQAssignor txEQAssignor = (TxEQAssignor) assignor;
+        					txEQAssignor.setInstPListMap(instPListMap);
         					Map<String, ArrayList<SessionData>> topicMemberMap = new HashMap<String,ArrayList<SessionData>>();
         					topicMemberMap.put(topic,membersList);
         					log.debug("Setting topicMembership Map. Member List Size " + membersList.size() +" Map Size  " + topicMemberMap.size());
-        					teqAssignor.setPartitionMemberMap(topicMemberMap);
+        					txEQAssignor.setPartitionMemberMap(topicMemberMap);
         				}
         			}
         		}
@@ -1080,7 +1080,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
     				if(pId >0)
     					pId = pId/2;
 
-    				//System.out.println("TEQAssignor:Assigned Partition :   " + pId);
+    				//System.out.println("TxEQAssignor:Assigned Partition :   " + pId);
     				data.addAssignedPartitions(new PartitionData(qpatInfo[ind].getQueueName(), qpatInfo[ind].getQueueId(), pId,
     						qpatInfo[ind].getSubscriberName(), qpatInfo[ind].getSubscriberId(), qpatInfo[ind].getInstId(), data.getInstanceId()==qpatInfo[ind].getInstId()?true:false ));
     			}
