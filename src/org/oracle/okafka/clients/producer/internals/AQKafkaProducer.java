@@ -503,9 +503,10 @@ public final class AQKafkaProducer extends AQClient {
 
 
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
-		if(response.wasDisconnected()) 
+		if(response.wasDisconnected()) {
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
-		    metadata.requestUpdate();
+			metadata.requestUpdate();
+		}
 		return response;
 	}
 

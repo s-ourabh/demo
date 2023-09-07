@@ -91,11 +91,7 @@ public abstract class AQClient {
 			clusterId = ((oracle.jdbc.internal.OracleConnection)con).getServerSessionInfo().getProperty("DATABASE_NAME");
 			//Get Instances
 			getNodes(nodes, con, currentNode, metadataRequested); 
-			log.debug("Exploring hosts of the cluster. #Nodes " + nodes.size());
-			for(Node nodeNow : nodes)
-			{	
-				log.debug("DB Instance: " + nodeNow);
-			}
+			
 
 
 			if(nodes.size() > 0)					
@@ -128,7 +124,7 @@ public abstract class AQClient {
 		}
 		return  new ClientResponse(request.makeHeader((short)1),
 				request.callback(), request.destination(), request.createdTimeMs(),
-				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, nodes, partitionInfo, errorsPerTopic));
+				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, all_nodes, partitionInfoList, errorsPerTopic));
 	}
 
 	private void getNodes(List<Node> nodes, Connection con, Node connectedNode, boolean metadataRequested) throws SQLException {
@@ -454,7 +450,7 @@ public abstract class AQClient {
 					}
 				}
 			}
-
+			partitionInfoList = partitionInfo;
 		} finally {
 			try {
 				if(stmt1 != null) 
