@@ -570,7 +570,9 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 			}
 		}
 		//System.out.println("TEQAssignor: Invoking getMetaDataNow ");
-		ClientResponse response = getMetadataNow(request, conn, metadata.updateRequested());
+
+		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
+
 		//System.out.println("TEQAssignor: MetaDataNow received");
 		if(response.wasDisconnected()) {
 			topicConsumersMap.remove(node);

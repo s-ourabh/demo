@@ -213,8 +213,9 @@ public class AQKafkaAdmin extends AQClient{
 			}
 			
 		}
-		ClientResponse response = getMetadataNow(request, connections.get(node), forceMetadata);
+		ClientResponse response = getMetadataNow(request, connections.get(node), node, forceMetadata);
 		if(response.wasDisconnected()) { 
+
 			connections.remove(node);
 			forceMetadata = true;
 		}

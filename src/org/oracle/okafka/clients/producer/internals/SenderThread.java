@@ -188,7 +188,7 @@ public class SenderThread implements Runnable {
         	}
         	if(sleepTime > 0)
         	{
-        		Thread.currentThread().sleep(sleepTime);
+        		Thread.sleep(sleepTime);
         	}
         	
         }catch(Exception e) {} 

@@ -455,20 +455,20 @@ public class NetworkClient implements KafkaClient {
 			//if (isReady(node, now)) {
 			if (canSendRequest(node, now)) {
 				// if we find an established connection with no in-flight requests we can stop right away
-				log.debug("Found least loaded node {}", node);
+				log.debug("Found connected node {}", node);
 				return node;
-			} else if (!this.connectionStates.isBlackedOut(node, now) ) {
+			}/* else if (!this.connectionStates.isBlackedOut(node, now) ) {
 				// otherwise if this is the best we have found so far, record that
 				found = node;
 			} else if (log.isTraceEnabled()) {
 				log.debug("Removing node {} from least loaded node selection: is-blacked-out: {}",
 						node, this.connectionStates.isBlackedOut(node, now));
-			}
+			} */
 		}
 
-		if (found != null)
+	/*	if (found != null)
 			log.debug("Found least loaded node {}", found);
-		else
+		else */
 		{
 			log.info("All Known nodes are disconnected. Try one time to connect.");
 			//System.out.println("All known nodes are disconnected. Try to re-connect to each node one after the other");
@@ -481,14 +481,16 @@ public class NetworkClient implements KafkaClient {
 				{
 					log.info("Reconnect successful to node " + node);
 					found = node;
-				}else {
+					break;
+				}
+				/*else {
 					try 
 					{
 						//Cannot connect to Oracle Database. Retry after reconnectBackoffMs seconds
 						Thread.sleep(reconnectBackoffMs);
 					} 
-					catch(Exception ignoreE) {}
-				}
+					catch(Exception ignoreE) {} 
+				} */
 			}
 			//If no known node is reachable, try without instnace_name. This is needed in case 
 			//application is using SCAN-Listener and database service which gets migrated to available instance 
@@ -507,7 +509,8 @@ public class NetworkClient implements KafkaClient {
 					log.error("Not able to reach Oracle Database:" + newNode);
 				}
 			} */
-			log.debug("Least loaded node selection failed to find an available node");
+			if(found == null)
+				log.debug("Least loaded node selection failed to find an available node");
 		}
 
 		return found;
@@ -618,9 +621,8 @@ public class NetworkClient implements KafkaClient {
 				return metadataTimeout;
 			}
 			Node node = leastLoadedNode(now);
-			if (node == null) 
+			if (node == null)  
 			{
-				//
 				if(metadata != null && metadata.fetch() != null)
 				{
 					List<Node> nodes = convertToOracleNodes(metadata.fetch().nodes());
@@ -676,7 +678,7 @@ public class NetworkClient implements KafkaClient {
 			if (cluster.nodes().size() > 0) {
 				this.metadata.update(cluster, null, now, false);
 			} else {
-				log.trace("Ignoring empty metadata response with correlation id {}.", requestHeader.correlationId());
+				log.debug("Ignoring empty metadata response with correlation id {}.", requestHeader.correlationId());
 				this.metadata.failedUpdate(now, null);
 			}
 		}

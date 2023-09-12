@@ -172,9 +172,9 @@ public final class AQKafkaProducer extends AQClient {
 				log.error("Exception while sending records for topic partition " + topicPartition + " no node " + node , e);
 
 				if ( e instanceof JMSException) {
-					log.info(" Encountered AQJMS Exception with error code " + ((AQjmsException)e).getErrorNumber() );
+					log.info(" Encountered JMS Exception:" + e.getMessage() );
 
-					if( ((AQjmsException)e).getErrorNumber() == 25348 )
+					if( (e instanceof AQjmsException ) && ((AQjmsException)e).getErrorNumber() == 25348 )
 					{
 						log.debug("Causing NotLeaderForPartitionException ");
 						partitionResponse =  createResponses(topicPartition, new NotLeaderForPartitionException(e), msgs);  
@@ -481,6 +481,7 @@ public final class AQKafkaProducer extends AQClient {
 							log.info("Attempting to connect to " + n);
 							conn = ((AQjmsSession)topicPublishersMap.get(n).getSession()).getDBConnection();
 							log.info("Connected to node " + n);
+							node = n;
 							break;
 						}catch(Exception e)
 						{
@@ -501,10 +502,12 @@ public final class AQKafkaProducer extends AQClient {
 			}
 		}
 
-		ClientResponse response = getMetadataNow(request, conn, metadata.updateRequested());
-		if(response.wasDisconnected()) 
+
+		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
+		if(response.wasDisconnected()) {
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
-		    metadata.requestUpdate();
+			metadata.requestUpdate();
+		}
 		return response;
 	}
 
