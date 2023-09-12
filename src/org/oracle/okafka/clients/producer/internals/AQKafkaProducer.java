@@ -39,10 +39,12 @@ import org.oracle.okafka.clients.producer.ProducerConfig;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.NotLeaderForPartitionException;
 import org.apache.kafka.common.header.Header;
 import org.oracle.okafka.common.network.AQClient;
 import org.oracle.okafka.common.protocol.ApiKeys;
+import org.oracle.okafka.common.requests.MetadataResponse;
 import org.oracle.okafka.common.requests.ProduceRequest;
 import org.oracle.okafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -131,6 +133,18 @@ public final class AQKafkaProducer extends AQClient {
 		TopicPublisher publisher = null;
 		int retryCnt = 2; 
 		AQjmsBytesMessage byteMessage  = null;
+		
+		try {
+			if(!metadata.validForEnq.contains(topicPartition.topic())) {
+				throw new InvalidTopicException("Not a Kafka topic");
+			}
+		}
+		catch(InvalidTopicException e) {
+			log.error("Cannot send messages to topic " + topicPartition.topic() + ". Not a kafka topic");
+			partitionResponse =  createResponses(topicPartition, new InvalidTopicException(e), msgs);
+			return createClientResponse(request, topicPartition, partitionResponse, disconnected);
+		}
+		
 		do
 		{
 			disconnected = false;
@@ -504,6 +518,22 @@ public final class AQKafkaProducer extends AQClient {
 
 
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
+		
+        MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
+		
+		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
+		
+		for(String topic: updatedCluster.topics()) {
+			try {
+				if(super.getQueueParameter(topic, conn, "KEY_BASED_ENQUEUE")==2) {
+					metadata.validForEnq.add(topic);
+				}
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		
 		if(response.wasDisconnected()) {
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
 			metadata.requestUpdate();

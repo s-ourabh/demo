@@ -273,7 +273,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     private final ApiVersions apiVersions;
     private final TransactionManager transactionManager;
     private final KafkaClient client;
-    private boolean transactional;
+   
     
     /**
      * A producer is instantiated by providing a set of key-value pairs as configuration. Valid configuration strings

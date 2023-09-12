@@ -380,7 +380,7 @@ public abstract class AQClient {
 				int partCnt = 0;
 				try {
 					//Get number of partitions
-					partCnt = getPartitions(ConnectionUtils.enquote(topic), con);
+					partCnt = getQueueParameter(ConnectionUtils.enquote(topic), con, "SHARD_NUM");	
 				} catch(SQLException sqlE) {
 					int errorNo = sqlE.getErrorCode();
 					if(errorNo == 24010)  {
@@ -461,18 +461,18 @@ public abstract class AQClient {
 		}
 	}
 
-	private int getPartitions(String topic, Connection con) throws Exception {
+	public int getQueueParameter(String topic, Connection con, String QueueParamater) throws Exception {
 		if(topic == null) return 0;
 		String query = "begin dbms_aqadm.get_queue_parameter(?,?,?); end;";
 		CallableStatement cStmt = null;
-		int part = 1;
+		int para= 1;
 		try {
 			cStmt = con.prepareCall(query);
 			cStmt.setString(1, topic);
-			cStmt.setString(2, "SHARD_NUM");
+			cStmt.setString(2, QueueParamater);
 			cStmt.registerOutParameter(3, OracleTypes.NUMBER);
 			cStmt.execute();
-			part = cStmt.getInt(3);
+			para = cStmt.getInt(3);
 		} 
 		catch(SQLException ex) {
 			throw ex;
@@ -485,7 +485,7 @@ public abstract class AQClient {
 				//Do Nothing
 			}
 		}		   
-		return part;
+		return para;
 	}  
 
 	public static String getProperty(String str, String property) {

@@ -99,6 +99,10 @@ public final class Metadata implements Closeable {
 	private KafkaException fatalException;
 	int dbMajorVersion = 23;
 	int dbMinorVersion = 1;
+	
+	public Set<String> validForDeq = new HashSet<String>();
+	public Set<String> validForEnq = new HashSet<String>();
+	
 	public Metadata(long refreshBackoffMs, long metadataExpireMs, boolean allowAutoTopicCreation, AbstractConfig configs) {
 		this(refreshBackoffMs, metadataExpireMs, allowAutoTopicCreation, false, new ClusterResourceListeners(), configs);
 	}

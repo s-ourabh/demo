@@ -49,6 +49,7 @@ import org.oracle.okafka.common.requests.ProduceResponse;
 import org.oracle.okafka.common.utils.MessageIdConverter;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.errors.InvalidMetadataException;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.NotLeaderForPartitionException;
 import org.apache.kafka.common.errors.RetriableException;
 import org.apache.kafka.common.errors.TimeoutException;
@@ -347,6 +348,10 @@ public class SenderThread implements Runnable {
 				
 				log.info("No Owner for Topic Partition " +batch.topicPartition +" retrying.");
 				this.metadata.requestUpdate();
+			}
+			if(producerException instanceof InvalidTopicException) {
+				log.info("Cannot send messages to topic " + batch.topicPartition.topic() + ". Not a kafka topic");
+				completeResponse(response);
 			}
 			else {
 				log.info("Exception while sending batch for partiton " +batch.topicPartition +". " + producerException);
