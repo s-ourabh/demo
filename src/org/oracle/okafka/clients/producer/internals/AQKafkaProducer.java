@@ -136,15 +136,16 @@ public final class AQKafkaProducer extends AQClient {
 		
 		try {
 			if(!metadata.validForEnq.contains(topicPartition.topic())) {
-				throw new InvalidTopicException("Not a Kafka topic");
+				throw new InvalidTopicException("Topic is not an Oracle kafka topic, Please drop and re-create topic"
+						+ "using AQKafkaAdmin.createTopics or dbms_aqadm.create_database_kafka_topic procedure");
 			}
 		}
 		catch(InvalidTopicException e) {
 			log.error("Cannot send messages to topic " + topicPartition.topic() + ". Not a kafka topic");
-			partitionResponse =  createResponses(topicPartition, new InvalidTopicException(e), msgs);
+			partitionResponse =  createResponses(topicPartition, e, msgs);
 			return createClientResponse(request, topicPartition, partitionResponse, disconnected);
 		}
-		
+
 		do
 		{
 			disconnected = false;
@@ -518,22 +519,21 @@ public final class AQKafkaProducer extends AQClient {
 
 
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
-		
-        MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
-		
+
+		MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
+
 		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
-		
+
 		for(String topic: updatedCluster.topics()) {
 			try {
-				if(super.getQueueParameter(topic, conn, "KEY_BASED_ENQUEUE")==2) {
+				if(super.getQueueParameter(keyBasedEnqParam, topic, conn)==2) {
 					metadata.validForEnq.add(topic);
 				}
 			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				log.debug("Topic is not an Oracle kafka topic");
 			}
 		}
-		
+
 		if(response.wasDisconnected()) {
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
 			metadata.requestUpdate();

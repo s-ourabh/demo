@@ -350,7 +350,7 @@ public class SenderThread implements Runnable {
 				this.metadata.requestUpdate();
 			}
 			if(producerException instanceof InvalidTopicException) {
-				log.info("Cannot send messages to topic " + batch.topicPartition.topic() + ". Not a kafka topic");
+				log.info(producerException.getMessage());
 				completeResponse(response);
 			}
 			else {

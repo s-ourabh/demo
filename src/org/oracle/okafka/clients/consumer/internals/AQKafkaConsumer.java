@@ -574,20 +574,18 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		//System.out.println("TEQAssignor: Invoking getMetaDataNow ");
 
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
-         
+
 		MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
-		
+
 		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
-	
+
 		for(String topic: updatedCluster.topics()) {
 			try {
-	
-				if(super.getQueueParameter(topic, conn, "STICKY_DEQUEUE")==2) {
+				if(super.getQueueParameter(stickyDeqParam, topic, conn)==2) {
 					metadata.validForDeq.add(topic);
 				}
 			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				log.debug("Topic is not an Oracle kafka topic");
 			}
 		}
 
