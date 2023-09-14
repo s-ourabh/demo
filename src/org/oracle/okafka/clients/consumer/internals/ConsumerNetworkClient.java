@@ -177,7 +177,7 @@ public class ConsumerNetworkClient {
 				String topic =  poll.getValue();
 				if(!metadata.validForDeq.contains(topic)) {
 					String errMsg = "Topic " + topic + " is not an Oracle kafka topic, Please drop and re-create topic"
-							+" using AQKafkaAdmin.createTopics or dbms_aqadm.create_database_kafka_topic procedure";
+							+" using Admin.createTopics() or dbms_aqadm.create_database_kafka_topic procedure";
 					throw new InvalidTopicException(errMsg);				
 				}
 				if(!this.client.ready(node, now)) {
