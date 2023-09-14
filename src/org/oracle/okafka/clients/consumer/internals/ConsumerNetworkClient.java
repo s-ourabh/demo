@@ -176,8 +176,9 @@ public class ConsumerNetworkClient {
 				log.debug("Fetch Records for topic " + poll.getValue() + " from host " + node );
 				String topic =  poll.getValue();
 				if(!metadata.validForDeq.contains(topic)) {
-					throw new InvalidTopicException("Topic is not an Oracle kafka topic, Please drop and re-create topic"
-							+ "using AQKafkaAdmin.createTopics or dbms_aqadm.create_database_kafka_topic procedure");
+					String errMsg = "Topic " + topic + " is not an Oracle kafka topic, Please drop and re-create topic"
+							+" using AQKafkaAdmin.createTopics or dbms_aqadm.create_database_kafka_topic procedure";
+					throw new InvalidTopicException(errMsg);				
 				}
 				if(!this.client.ready(node, now)) {
 					log.debug("Failed to consume messages from node: {}", node);

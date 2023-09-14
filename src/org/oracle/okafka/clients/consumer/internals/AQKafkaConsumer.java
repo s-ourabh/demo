@@ -581,11 +581,11 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 
 		for(String topic: updatedCluster.topics()) {
 			try {
-				if(super.getQueueParameter(stickyDeqParam, topic, conn)==2) {
+				if(super.getQueueParameter(STICKYDEQ_PARAM, topic, conn)==2) {
 					metadata.validForDeq.add(topic);
 				}
 			} catch (Exception e) {
-				log.debug("Topic is not an Oracle kafka topic");
+				log.debug(e.getMessage());
 			}
 		}
 

@@ -136,8 +136,9 @@ public final class AQKafkaProducer extends AQClient {
 		
 		try {
 			if(!metadata.validForEnq.contains(topicPartition.topic())) {
-				throw new InvalidTopicException("Topic is not an Oracle kafka topic, Please drop and re-create topic"
-						+ "using AQKafkaAdmin.createTopics or dbms_aqadm.create_database_kafka_topic procedure");
+				String errMsg = "Topic " + topicPartition.topic() + " is not an Oracle kafka topic, Please drop and re-create topic"
+						+" using AQKafkaAdmin.createTopics or dbms_aqadm.create_database_kafka_topic procedure";
+				throw new InvalidTopicException(errMsg);
 			}
 		}
 		catch(InvalidTopicException e) {
@@ -526,11 +527,11 @@ public final class AQKafkaProducer extends AQClient {
 
 		for(String topic: updatedCluster.topics()) {
 			try {
-				if(super.getQueueParameter(keyBasedEnqParam, topic, conn)==2) {
+				if(super.getQueueParameter(KEYBASEDENQ_PARAM, topic, conn)==2) {
 					metadata.validForEnq.add(topic);
 				}
 			} catch (Exception e) {
-				log.debug("Topic is not an Oracle kafka topic");
+				log.debug(e.getMessage());
 			}
 		}
 
