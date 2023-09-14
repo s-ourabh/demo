@@ -54,6 +54,10 @@ public abstract class AQClient {
 	public static final String PARTITION_PROPERTY = "AQINTERNAL_PARTITION";
 	public static final String HEADERCOUNT_PROPERTY = "AQINTERNAL_HEADERCOUNT";
 	public static final String MESSAGE_VERSION = "AQINTERNAL_MESSAGEVERSION";
+	public static final String STICKYDEQ_PARAM = "STICKY_DEQUEUE";
+	public static final String KEYBASEDENQ_PARAM = "KEY_BASED_ENQUEUE";
+	public static final String SHARDNUM_PARAM = "SHARD_NUM";
+
 	
 	public AQClient(Logger log, AbstractConfig configs) {
 		this.log = log;
@@ -380,7 +384,7 @@ public abstract class AQClient {
 				int partCnt = 0;
 				try {
 					//Get number of partitions
-					partCnt = getPartitions(ConnectionUtils.enquote(topic), con);
+					partCnt = getQueueParameter(SHARDNUM_PARAM, ConnectionUtils.enquote(topic), con);	
 				} catch(SQLException sqlE) {
 					int errorNo = sqlE.getErrorCode();
 					if(errorNo == 24010)  {
@@ -461,31 +465,25 @@ public abstract class AQClient {
 		}
 	}
 
-	private int getPartitions(String topic, Connection con) throws Exception {
+	public int getQueueParameter(String queueParamName, String topic, Connection con) throws SQLException {
 		if(topic == null) return 0;
 		String query = "begin dbms_aqadm.get_queue_parameter(?,?,?); end;";
 		CallableStatement cStmt = null;
-		int part = 1;
+		int para= 1;
+
 		try {
 			cStmt = con.prepareCall(query);
 			cStmt.setString(1, topic);
-			cStmt.setString(2, "SHARD_NUM");
+			cStmt.setString(2, queueParamName);
 			cStmt.registerOutParameter(3, OracleTypes.NUMBER);
 			cStmt.execute();
-			part = cStmt.getInt(3);
+			para = cStmt.getInt(3);
 		} 
-		catch(SQLException ex) {
-			throw ex;
-		}
 		finally {
-			try {
-				if(cStmt != null)
-					cStmt.close();
-			} catch(Exception ex) {
-				//Do Nothing
-			}
+			if(cStmt != null)
+				cStmt.close();
 		}		   
-		return part;
+		return para;
 	}  
 
 	public static String getProperty(String str, String property) {

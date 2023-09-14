@@ -39,10 +39,12 @@ import org.oracle.okafka.clients.producer.ProducerConfig;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.NotLeaderForPartitionException;
 import org.apache.kafka.common.header.Header;
 import org.oracle.okafka.common.network.AQClient;
 import org.oracle.okafka.common.protocol.ApiKeys;
+import org.oracle.okafka.common.requests.MetadataResponse;
 import org.oracle.okafka.common.requests.ProduceRequest;
 import org.oracle.okafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -131,6 +133,20 @@ public final class AQKafkaProducer extends AQClient {
 		TopicPublisher publisher = null;
 		int retryCnt = 2; 
 		AQjmsBytesMessage byteMessage  = null;
+		
+		try {
+			if(!metadata.validForEnq.contains(topicPartition.topic())) {
+				String errMsg = "Topic " + topicPartition.topic() + " is not an Oracle kafka topic, Please drop and re-create topic"
+						+" using Admin.createTopics() or dbms_aqadm.create_database_kafka_topic procedure";
+				throw new InvalidTopicException(errMsg);
+			}
+		}
+		catch(InvalidTopicException e) {
+			log.error("Cannot send messages to topic " + topicPartition.topic() + ". Not a kafka topic");
+			partitionResponse =  createResponses(topicPartition, e, msgs);
+			return createClientResponse(request, topicPartition, partitionResponse, disconnected);
+		}
+
 		do
 		{
 			disconnected = false;
@@ -504,6 +520,21 @@ public final class AQKafkaProducer extends AQClient {
 
 
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
+
+		MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
+
+		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
+
+		for(String topic: updatedCluster.topics()) {
+			try {
+				if(super.getQueueParameter(KEYBASEDENQ_PARAM, topic, conn)==2) {
+					metadata.validForEnq.add(topic);
+				}
+			} catch (Exception e) {
+				log.debug(e.getMessage());
+			}
+		}
+
 		if(response.wasDisconnected()) {
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
 			metadata.requestUpdate();

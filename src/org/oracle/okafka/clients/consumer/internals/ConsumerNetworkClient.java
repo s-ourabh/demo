@@ -45,6 +45,7 @@ import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
 import org.oracle.okafka.clients.KafkaClient;
@@ -173,6 +174,12 @@ public class ConsumerNetworkClient {
 			for(Map.Entry<Node, String> poll : pollMap.entrySet()) {	
 				Node node = poll.getKey();
 				log.debug("Fetch Records for topic " + poll.getValue() + " from host " + node );
+				String topic =  poll.getValue();
+				if(!metadata.validForDeq.contains(topic)) {
+					String errMsg = "Topic " + topic + " is not an Oracle kafka topic, Please drop and re-create topic"
+							+" using Admin.createTopics() or dbms_aqadm.create_database_kafka_topic procedure";
+					throw new InvalidTopicException(errMsg);				
+				}
 				if(!this.client.ready(node, now)) {
 					log.debug("Failed to consume messages from node: {}", node);
 					//ToDo: Retry poll to get new connection to same or different node.
@@ -186,7 +193,7 @@ public class ConsumerNetworkClient {
 					handleFetchResponse(response, timeoutMs);
 					if (response.wasDisconnected())
 						retry = true;
-					
+
 					break;
 				}
 			}

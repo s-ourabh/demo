@@ -65,6 +65,7 @@ import org.oracle.okafka.common.requests.FetchRequest;
 import org.oracle.okafka.common.requests.FetchResponse;
 import org.oracle.okafka.common.requests.JoinGroupRequest;
 import org.oracle.okafka.common.requests.JoinGroupResponse;
+import org.oracle.okafka.common.requests.MetadataResponse;
 import org.oracle.okafka.common.requests.OffsetResetRequest;
 import org.oracle.okafka.common.requests.OffsetResetResponse;
 import org.oracle.okafka.common.requests.SubscribeRequest;
@@ -516,12 +517,13 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 	private ClientResponse getMetadata(ClientRequest request) {
 	    Connection conn = null;
 		Node node = null;
+		Cluster cluster = null;
 		//Cluster used for this metadata is still a bootstrap cluster and does not have all necessary information
 		//Pick any random node from the bootstrap nodes and send metadata request.
 		if(metadata.isBootstrap())
 		{
 			//System.out.println("BootStrap Metadata ");
-			Cluster cluster = metadata.fetch();
+			cluster = metadata.fetch();
 			List<Node> clusterNodes = NetworkClient.convertToOracleNodes(cluster.nodes());
 			// Check if we have a node where connection already exists
 			Set<Node> nodesWithConn = topicConsumersMap.keySet();
@@ -572,6 +574,20 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		//System.out.println("TEQAssignor: Invoking getMetaDataNow ");
 
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
+
+		MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
+
+		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
+
+		for(String topic: updatedCluster.topics()) {
+			try {
+				if(super.getQueueParameter(STICKYDEQ_PARAM, topic, conn)==2) {
+					metadata.validForDeq.add(topic);
+				}
+			} catch (Exception e) {
+				log.debug(e.getMessage());
+			}
+		}
 
 		//System.out.println("TEQAssignor: MetaDataNow received");
 		if(response.wasDisconnected()) {
