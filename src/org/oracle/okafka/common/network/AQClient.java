@@ -85,6 +85,7 @@ public abstract class AQClient {
 		List<String> metadataTopics = new ArrayList<String>(metadataRequest.topics());
 		boolean disconnected = false;
 		String clusterId = "";
+		boolean getPartitioninfo = false;
 		try {
 			if(con == null)
 			{
@@ -93,14 +94,13 @@ public abstract class AQClient {
 			}
 			//Database Name to be set as Cluster ID
 			clusterId = ((oracle.jdbc.internal.OracleConnection)con).getServerSessionInfo().getProperty("DATABASE_NAME");
-			//Get Instances
-			getNodes(nodes, con, currentNode, metadataRequested); 
+		
+			getPartitioninfo = getNodes(nodes, con, currentNode, metadataRequested); 
 			
-
-
-			if(nodes.size() > 0)					
+            if(getPartitioninfo)					
 				getPartitionInfo(metadataRequest.topics(), metadataTopics, con,
 						nodes, metadataRequest.allowAutoTopicCreation(), partitionInfo, errorsPerTopic);
+            
 		} catch(Exception exception) {
 			log.error("Exception while getting metadata "+ exception.getMessage(), exception );
 			//exception.printStackTrace();
@@ -131,7 +131,7 @@ public abstract class AQClient {
 				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, all_nodes, partitionInfoList, errorsPerTopic));
 	}
 
-	private void getNodes(List<Node> nodes, Connection con, Node connectedNode, boolean metadataRequested) throws SQLException {
+	private boolean getNodes(List<Node> nodes, Connection con, Node connectedNode, boolean metadataRequested) throws SQLException {
 		Statement stmt = null;
 		ResultSet result = null;
 		String user = "";
@@ -154,7 +154,7 @@ public abstract class AQClient {
 			}
 			result.close();
 			result = null;
-			
+
 			if (instance_names.size()==1)
 			{
 				//Connected Node is :
@@ -162,7 +162,8 @@ public abstract class AQClient {
 				// Only one RAC node is up and we are connected to it.
 				if(connectedNode != null) {
 					nodes.add(connectedNode);
-					return;
+					all_nodes = nodes;
+					return true;
 				}
 			}
 
@@ -170,7 +171,7 @@ public abstract class AQClient {
 				instancesTostarttime = instance_startTimes;
 				furtherMetadata = true;
 			}
-			
+
 			if (furtherMetadata || metadataRequested) {
 
 				query = "select inst_id, TYPE, value from gv$listener_network order by inst_id";
@@ -263,7 +264,9 @@ public abstract class AQClient {
 						log.debug("DB Instance: " + nodeNow);
 					}
 				}
+				return true;
 			}
+
 		}
 		catch(Exception e)
 		{
@@ -279,6 +282,8 @@ public abstract class AQClient {
 				//do nothing
 			}
 		}
+
+		return false;
 	}
 
 	private Node getNodeToThisConnection(Connection con)
@@ -354,8 +359,8 @@ public abstract class AQClient {
 	private void getPartitionInfo(List<String> topics, List<String> topicsRem, Connection con,
 			List<Node> nodes, boolean allowAutoTopicCreation, 
 			List<PartitionInfo> partitionInfo, Map<String, Exception> errorsPerTopic) throws Exception {
-
-		if(nodes.size() <= 0 || topics == null || topics.isEmpty())
+		
+        if(nodes.size() <= 0 || topics == null || topics.isEmpty())
 			return;
 
 		//String queryQShard = "select shard_id, enqueue_instance from user_queue_shards where  name = ? ";
