@@ -97,7 +97,7 @@ public abstract class AQClient {
 		
 			getPartitioninfo = getNodes(nodes, con, currentNode, metadataRequested); 
 			
-            if(getPartitioninfo)					
+            if(getPartitioninfo || metadataRequested)					
 				getPartitionInfo(metadataRequest.topics(), metadataTopics, con,
 						nodes, metadataRequest.allowAutoTopicCreation(), partitionInfo, errorsPerTopic);
             
@@ -131,11 +131,17 @@ public abstract class AQClient {
 				System.currentTimeMillis(), disconnected, null,null, new MetadataResponse(clusterId, all_nodes, partitionInfoList, errorsPerTopic));
 	}
 
+	// Fetches existing cluster nodes 
+	// Returns TRUE if new node is added, existing node went down, or if the startup time changed for the nodes
+	// otherwise return false
+	
 	private boolean getNodes(List<Node> nodes, Connection con, Node connectedNode, boolean metadataRequested) throws SQLException {
 		Statement stmt = null;
 		ResultSet result = null;
 		String user = "";
 		boolean furtherMetadata = false;
+		boolean onlyOneNode = false;
+
 		try {
 			user = con.getMetaData().getUserName();
 			stmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
@@ -163,13 +169,17 @@ public abstract class AQClient {
 				if(connectedNode != null) {
 					nodes.add(connectedNode);
 					all_nodes = nodes;
-					return true;
+					onlyOneNode = true;
 				}
 			}
 
 			if(!instance_startTimes.equals(instancesTostarttime)) {
 				instancesTostarttime = instance_startTimes;
 				furtherMetadata = true;
+			}
+
+			if(onlyOneNode) {
+				return furtherMetadata;
 			}
 
 			if (furtherMetadata || metadataRequested) {
@@ -264,7 +274,7 @@ public abstract class AQClient {
 						log.debug("DB Instance: " + nodeNow);
 					}
 				}
-				return true;
+
 			}
 
 		}
@@ -283,7 +293,7 @@ public abstract class AQClient {
 			}
 		}
 
-		return false;
+		return furtherMetadata;
 	}
 
 	private Node getNodeToThisConnection(Connection con)
@@ -360,7 +370,7 @@ public abstract class AQClient {
 			List<Node> nodes, boolean allowAutoTopicCreation, 
 			List<PartitionInfo> partitionInfo, Map<String, Exception> errorsPerTopic) throws Exception {
 		
-        if(nodes.size() <= 0 || topics == null || topics.isEmpty())
+		if(nodes.size() <= 0 || topics == null || topics.isEmpty())
 			return;
 
 		//String queryQShard = "select shard_id, enqueue_instance from user_queue_shards where  name = ? ";
