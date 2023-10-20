@@ -133,7 +133,7 @@ public final class AQKafkaProducer extends AQClient {
 		TopicPublisher publisher = null;
 		int retryCnt = 2; 
 		AQjmsBytesMessage byteMessage  = null;
-		
+		Connection conn =null;
 		try {
 			if(!metadata.validForEnq.contains(topicPartition.topic())) {
 				String errMsg = "Topic " + topicPartition.topic() + " is not an Oracle kafka topic, Please drop and re-create topic"
@@ -157,6 +157,7 @@ public final class AQKafkaProducer extends AQClient {
 				{
 					throw new NullPointerException("No publishers created for node " + node);
 				}
+				conn = ((AQjmsSession)topicPublishersMap.get(node).getSession()).getDBConnection();
 				TopicSession session = nodePublishers.getSession();
 				final List<AQjmsBytesMessage> messages = new ArrayList<>();	
 				Iterator<MutableRecordBatch> mutableRecordBatchIterator = memoryRecords.batchIterator();
@@ -164,7 +165,12 @@ public final class AQKafkaProducer extends AQClient {
 					Iterator<Record>  recordIterator = mutableRecordBatchIterator.next().iterator();
 					while(recordIterator.hasNext()) {
 						Record record = recordIterator.next();
-						byteMessage = createBytesMessage(session, topicPartition, record.key(), record.value(), record.headers());
+						if(super.getQueueParameter(STICKYDEQ_PARAM,topicPartition.topic(), conn) !=2) {
+							byteMessage = createBytesMessageV1(session, topicPartition, record.key(), record.value(), record.headers());
+						}
+						else {
+							byteMessage = createBytesMessageV2(session, topicPartition, record.key(), record.value(), record.headers());
+						}
 						messages.add(byteMessage);	
 					}
 				}
@@ -270,8 +276,8 @@ public final class AQKafkaProducer extends AQClient {
 	/**
 	 * Creates AQjmsBytesMessage from ByteBuffer's key, value and headers
 	 */
-	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, 
-			ByteBuffer key, ByteBuffer value, Header[] headers, boolean obsolete ) throws JMSException {
+	private AQjmsBytesMessage createBytesMessageV1(TopicSession session, TopicPartition topicPartition, 
+			ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
 		AQjmsBytesMessage msg=null;
 		msg = (AQjmsBytesMessage)(session.createBytesMessage());
 
@@ -286,7 +292,7 @@ public final class AQKafkaProducer extends AQClient {
 		payload = null;
 		msg.setStringProperty("topic", topicPartition.topic());
 		msg.setStringProperty(AQClient.PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
-
+		msg.setIntProperty(MESSAGE_VERSION, 1);
 		return msg;
 	}
 
@@ -305,7 +311,7 @@ public final class AQKafkaProducer extends AQClient {
 	 * 
 	 * 	*/
 	
-	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, 
+	private AQjmsBytesMessage createBytesMessageV2(TopicSession session, TopicPartition topicPartition, 
 			ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
 
 		AQjmsBytesMessage msg=null;
