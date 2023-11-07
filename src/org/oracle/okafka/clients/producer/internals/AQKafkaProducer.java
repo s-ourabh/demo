@@ -35,6 +35,7 @@ import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
 import org.oracle.okafka.clients.Metadata;
 import org.oracle.okafka.clients.NetworkClient;
+import org.oracle.okafka.clients.TopicTeqParameters;
 import org.oracle.okafka.clients.producer.ProducerConfig;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.Cluster;
@@ -62,7 +63,7 @@ public final class AQKafkaProducer extends AQClient {
 
 	//Holds TopicPublishers of each node. Each TopicPublisher can contain a connection to corresponding node, session associated with that connection and topic publishers associated with that session
 	private final Map<Node, TopicPublishers> topicPublishersMap;
-	private final ProducerConfig configs;
+    private final ProducerConfig configs;
 	private final Time time;
 	private Metadata metadata; 
 	private final int DLENGTH_SIZE = 4;
@@ -134,8 +135,9 @@ public final class AQKafkaProducer extends AQClient {
 		int retryCnt = 2; 
 		AQjmsBytesMessage byteMessage  = null;
 		Connection conn =null;
+		int StickyDeq = metadata.topicParaMap.get(topicPartition.topic()).getstickyDeq();
 		try {
-			if(!metadata.validForEnq.contains(topicPartition.topic())) {
+			if(metadata.topicParaMap.get(topicPartition.topic()).getkeyBased() != 2) {
 				String errMsg = "Topic " + topicPartition.topic() + " is not an Oracle kafka topic, Please drop and re-create topic"
 						+" using Admin.createTopics() or dbms_aqadm.create_database_kafka_topic procedure";
 				throw new InvalidTopicException(errMsg);
@@ -165,12 +167,7 @@ public final class AQKafkaProducer extends AQClient {
 					Iterator<Record>  recordIterator = mutableRecordBatchIterator.next().iterator();
 					while(recordIterator.hasNext()) {
 						Record record = recordIterator.next();
-						if(super.getQueueParameter(STICKYDEQ_PARAM,topicPartition.topic(), conn) !=2) {
-							byteMessage = createBytesMessageV1(session, topicPartition, record.key(), record.value(), record.headers());
-						}
-						else {
-							byteMessage = createBytesMessageV2(session, topicPartition, record.key(), record.value(), record.headers());
-						}
+						byteMessage = createBytesMessage(session, topicPartition, record.key(), record.value(), record.headers(),StickyDeq);
 						messages.add(byteMessage);	
 					}
 				}
@@ -276,24 +273,124 @@ public final class AQKafkaProducer extends AQClient {
 	/**
 	 * Creates AQjmsBytesMessage from ByteBuffer's key, value and headers
 	 */
-	private AQjmsBytesMessage createBytesMessageV1(TopicSession session, TopicPartition topicPartition, 
-			ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
-		AQjmsBytesMessage msg=null;
-		msg = (AQjmsBytesMessage)(session.createBytesMessage());
+	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, 
+			ByteBuffer key, ByteBuffer value, Header[] headers, int stickyDeq) throws JMSException {
 
-		if(key!=null) {
-			byte[] keyByteArray  = new byte[key.limit()];
-			key.get(keyByteArray);
-			msg.setJMSCorrelationID(new String(keyByteArray));
+		AQjmsBytesMessage msg=null;
+        
+		if(stickyDeq == 2) {
+           
+			int keyLen = 0;
+			int valueLen =0;
+
+			int hKeysLen[] = null;
+			int hValuesLen[] = null;
+
+			byte[] keyByteArray  = null;
+			byte[] valueByteArray = null;
+
+
+			if(headers != null)
+			{
+				hKeysLen = new int[headers.length];
+				hValuesLen = new int[headers.length];
+			}
+
+			msg = (AQjmsBytesMessage)(session.createBytesMessage());
+
+			int totalSize = 0;
+			if(key != null) {
+
+				keyByteArray =  new byte[key.limit()];
+				key.get(keyByteArray);
+				keyLen = keyByteArray.length;
+			}
+
+			totalSize += (keyLen + DLENGTH_SIZE );
+
+			if(value != null) {
+				valueByteArray = new byte[value.limit()];
+				value.get(valueByteArray);
+				valueLen = valueByteArray.length;
+
+			}
+			totalSize += (valueLen + DLENGTH_SIZE);
+
+			if(headers != null) {
+				int hIndex = 0;
+				for(Header h:headers)
+				{
+					int hKeyLen = h.key().getBytes().length;
+					totalSize += (hKeyLen + DLENGTH_SIZE);
+					hKeysLen[hIndex] = hKeyLen;
+					int hValueLength = h.value().length;
+					totalSize += (hValueLength +DLENGTH_SIZE);
+					hValuesLen[hIndex++] = hValueLength;
+				}
+			}
+			ByteBuffer pBuffer = ByteBuffer.allocate(totalSize);
+
+			//If Key is null Put Length = 0
+			pBuffer.put(ConnectionUtils.convertTo4Byte(keyLen));
+			if(keyLen > 0) {
+				pBuffer.put(keyByteArray);
+				msg.setJMSCorrelationID(new String(keyByteArray));
+			}
+			//If Value is null then put length = 0
+			pBuffer.put(ConnectionUtils.convertTo4Byte(valueLen));
+			if(valueLen > 0)
+			{
+				pBuffer.put(valueByteArray);
+			}
+
+			if(headers != null)
+			{
+				int hIndex = 0;
+				for(Header h : headers)
+				{
+					pBuffer.put(ConnectionUtils.convertTo4Byte(hKeysLen[hIndex]));
+					pBuffer.put(h.key().getBytes());
+					pBuffer.put(ConnectionUtils.convertTo4Byte(hValuesLen[hIndex++]));
+					pBuffer.put(h.value());
+				}
+			}
+
+			pBuffer.rewind();
+			byte[] payload = new byte[pBuffer.limit()];
+			pBuffer.get(payload);
+			msg.writeBytes(payload);
+			payload = null;
+			msg.setStringProperty(PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
+			if(headers !=null)
+			{
+				msg.setIntProperty(HEADERCOUNT_PROPERTY, headers.length);
+			}
+
+			msg.setIntProperty(MESSAGE_VERSION, 2);
+
+			return msg;
 		}
-		byte[] payload = new byte[value.limit()];
-		value.get(payload);
-		msg.writeBytes(payload);
-		payload = null;
-		msg.setStringProperty("topic", topicPartition.topic());
-		msg.setStringProperty(AQClient.PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
-		msg.setIntProperty(MESSAGE_VERSION, 1);
-		return msg;
+		else {
+			
+			msg = (AQjmsBytesMessage)(session.createBytesMessage());
+
+			if(key!=null) {
+				byte[] keyByteArray  = new byte[key.limit()];
+				key.get(keyByteArray);
+				msg.setJMSCorrelationID(new String(keyByteArray));
+			}
+
+			byte[] payload = new byte[value.limit()];
+			value.get(payload);
+			msg.writeBytes(payload);
+			payload = null;
+			msg.setStringProperty("topic", topicPartition.topic());
+			msg.setStringProperty(AQClient.PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
+			msg.setIntProperty(MESSAGE_VERSION, 1);
+
+			return msg;
+		}
+
 	}
 
 	/*
@@ -311,100 +408,7 @@ public final class AQKafkaProducer extends AQClient {
 	 * 
 	 * 	*/
 	
-	private AQjmsBytesMessage createBytesMessageV2(TopicSession session, TopicPartition topicPartition, 
-			ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
-
-		AQjmsBytesMessage msg=null;
-		int keyLen = 0;
-		int valueLen =0;
-
-		int hKeysLen[] = null;
-		int hValuesLen[] = null;
-		
-		byte[] keyByteArray  = null;
-		byte[] valueByteArray = null;
-		
-		
-		if(headers != null)
-		{
-			hKeysLen = new int[headers.length];
-			hValuesLen = new int[headers.length];
-		}
-
-		msg = (AQjmsBytesMessage)(session.createBytesMessage());
-
-		int totalSize = 0;
-		if(key != null) {
-			
-			keyByteArray =  new byte[key.limit()];
-			key.get(keyByteArray);
-			keyLen = keyByteArray.length;
-		}
 	
-		totalSize += (keyLen + DLENGTH_SIZE );
-		
-		if(value != null) {
-			valueByteArray = new byte[value.limit()];
-			value.get(valueByteArray);
-			valueLen = valueByteArray.length;
-			
-		}
-		totalSize += (valueLen + DLENGTH_SIZE);
-		
-		if(headers != null) {
-			int hIndex = 0;
-			for(Header h:headers)
-			{
-				int hKeyLen = h.key().getBytes().length;
-				totalSize += (hKeyLen + DLENGTH_SIZE);
-				hKeysLen[hIndex] = hKeyLen;
-				int hValueLength = h.value().length;
-				totalSize += (hValueLength +DLENGTH_SIZE);
-				hValuesLen[hIndex++] = hValueLength;
-			}
-		}
-		ByteBuffer pBuffer = ByteBuffer.allocate(totalSize);
-
-		//If Key is null Put Length = 0
-		pBuffer.put(ConnectionUtils.convertTo4Byte(keyLen));
-		if(keyLen > 0) {
-			pBuffer.put(keyByteArray);
-			msg.setJMSCorrelationID(new String(keyByteArray));
-		}
-		//If Value is null then put length = 0
-		pBuffer.put(ConnectionUtils.convertTo4Byte(valueLen));
-		if(valueLen > 0)
-		{
-			pBuffer.put(valueByteArray);
-		}
-
-		if(headers != null)
-		{
-			int hIndex = 0;
-			for(Header h : headers)
-			{
-				pBuffer.put(ConnectionUtils.convertTo4Byte(hKeysLen[hIndex]));
-				pBuffer.put(h.key().getBytes());
-				pBuffer.put(ConnectionUtils.convertTo4Byte(hValuesLen[hIndex++]));
-				pBuffer.put(h.value());
-			}
-		}
-		
-		pBuffer.rewind();
-		byte[] payload = new byte[pBuffer.limit()];
-		pBuffer.get(payload);
-		msg.writeBytes(payload);
-		payload = null;
-		msg.setStringProperty(PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
-		if(headers !=null)
-		{
-			msg.setIntProperty(HEADERCOUNT_PROPERTY, headers.length);
-		}
-		
-	    msg.setIntProperty(MESSAGE_VERSION, 2);
-
-		return msg;
-	}
 
 	/**
 	 * Creates response for records in a producer batch from each corresponding AQjmsBytesMessage data updated after send is done.
@@ -528,14 +532,18 @@ public final class AQKafkaProducer extends AQClient {
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
 
 		MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
-
+		
+	
 		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
-
+		
 		for(String topic: updatedCluster.topics()) {
+			TopicTeqParameters topicTeqParam = new TopicTeqParameters();
 			try {
-				if(super.getQueueParameter(KEYBASEDENQ_PARAM, topic, conn)==2) {
-					metadata.validForEnq.add(topic);
-				}
+				topicTeqParam.setkeyBased(super.getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
+				topicTeqParam.setstickyDeq(super.getQueueParameter(STICKYDEQ_PARAM, topic, conn));
+				topicTeqParam.setshardNum(super.getQueueParameter(SHARDNUM_PARAM, topic, conn));
+				metadata.topicParaMap.put(topic, topicTeqParam);
+				
 			} catch (Exception e) {
 				log.debug(e.getMessage());
 			}

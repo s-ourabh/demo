@@ -42,6 +42,7 @@ import org.apache.kafka.clients.ClientResponse;
 import org.oracle.okafka.clients.CommonClientConfigs;
 import org.oracle.okafka.clients.Metadata;
 import org.oracle.okafka.clients.NetworkClient;
+import org.oracle.okafka.clients.TopicTeqParameters;
 import org.oracle.okafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -578,12 +579,14 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
 
 		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
-
+		
 		for(String topic: updatedCluster.topics()) {
+			TopicTeqParameters topicTeqParam = new TopicTeqParameters();
 			try {
-				if(super.getQueueParameter(STICKYDEQ_PARAM, topic, conn)==2) {
-					metadata.validForDeq.add(topic);
-				}
+				topicTeqParam.setkeyBased(super.getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
+				topicTeqParam.setstickyDeq(super.getQueueParameter(STICKYDEQ_PARAM, topic, conn));
+				topicTeqParam.setshardNum(super.getQueueParameter(SHARDNUM_PARAM, topic, conn));
+				metadata.topicParaMap.put(topic, topicTeqParam);
 			} catch (Exception e) {
 				log.debug(e.getMessage());
 			}
