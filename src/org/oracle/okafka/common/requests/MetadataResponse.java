@@ -80,6 +80,7 @@ public class MetadataResponse extends AbstractResponse {
     	return new Cluster(clusterId, NetworkClient.convertToKafkaNodes(nodes), partitionInfo,new HashSet<>(), new HashSet<>(), nodes.size() > 0 ?nodes.get(0) : null);//, configs);
     }
     
+    
     public Map<String, Exception> topicErrors() {
     	return  this.errorsPerTopic;
     }

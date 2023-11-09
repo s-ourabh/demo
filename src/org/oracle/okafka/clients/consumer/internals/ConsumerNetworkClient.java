@@ -38,9 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
 import javax.jms.JMSException;
-
 import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -145,7 +143,7 @@ public class ConsumerNetworkClient {
 		this.subscriptionSnapshot = new HashSet<>();
 		this.defaultApiTimeoutMs = defaultApiTimeoutMs;
         this.aqConsumer = aqConsumer;
-		if (autoCommitEnabled)
+        if (autoCommitEnabled)
 			this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
 	}
 
