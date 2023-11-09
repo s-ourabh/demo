@@ -581,16 +581,13 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
 		
 		for(String topic: updatedCluster.topics()) {
-			TopicTeqParameters topicTeqParam = new TopicTeqParameters();
 			try {
-				topicTeqParam.setkeyBased(super.getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
-				topicTeqParam.setstickyDeq(super.getQueueParameter(STICKYDEQ_PARAM, topic, conn));
-				topicTeqParam.setshardNum(super.getQueueParameter(SHARDNUM_PARAM, topic, conn));
-				metadata.topicParaMap.put(topic, topicTeqParam);
-			} catch (Exception e) {
-				log.debug(e.getMessage());
+				super.setQueueParameter(topic, conn, metadata.topicParaMap);
+			} catch (SQLException e) {
+				log.error("Exception while fetching TEQ parameters and updating metadata " + e.getMessage());
 			}
 		}
+
 
 		//System.out.println("TEQAssignor: MetaDataNow received");
 		if(response.wasDisconnected()) {
