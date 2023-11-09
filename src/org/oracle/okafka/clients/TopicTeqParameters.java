@@ -1,7 +1,5 @@
 package org.oracle.okafka.clients;
 
-import java.util.HashMap;
-
 public class TopicTeqParameters {
 
 	int keyBased;
@@ -9,9 +7,8 @@ public class TopicTeqParameters {
 	int shardNum;
 	int dbMajorVersion;
 	int dbMinorVersion;
-	int msgVersion;
-    
-	
+	int msgVersionSupported;
+
 	public void setkeyBased(int keyBased)
 	{
 		this.keyBased = keyBased;
@@ -27,15 +24,6 @@ public class TopicTeqParameters {
 		this.shardNum = shardNum;
 	}
 
-	public void setmsgVersion() {
-		if(getstickyDeq()!=2) {
-			this.msgVersion = 1;
-		}
-        else {
-			this.msgVersion = 2;
-		}
-	}
-	
 	public int getkeyBased()
 	{
 		return this.keyBased;
@@ -50,11 +38,5 @@ public class TopicTeqParameters {
 	{
 		return this.shardNum;
 	}
-	 
-	public int getmsgVersion() {
-		return this.msgVersion;
-	}
-	
-	
 
 }

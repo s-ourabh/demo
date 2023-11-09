@@ -12,9 +12,10 @@ class TestRunner {
 		
 		Result result = new Result();
 	
-		result = JUnitCore.runClasses(SimpleOkafkaProducer.class, SimpleOkafkaConsumer.class);
-				//SimpleOkafkaProducer.class
-				  
+		result = JUnitCore.runClasses(SimpleOkafkaAdmin.class, SimpleOkafkaProducer.class, OkafkaAutoOffsetReset.class,
+				  SimpleOkafkaProducer.class, OkafkaSeekToEnd.class, OkafkaSeekToBeginning.class, SimpleOkafkaProducer.class,
+				  OkafkaUnsubscribe.class, OkafkaDeleteTopic.class);
+		
 		for (Failure failure : result.getFailures()) {
 	        System.out.println("Test failure : "+ failure.toString());
 	    }

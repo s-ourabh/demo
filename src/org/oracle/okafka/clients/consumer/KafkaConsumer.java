@@ -942,7 +942,6 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 				 * 	*/
 				if(messageVersion == 2)
 				{
-					System.out.println("Message version 2");
 					byte[] payloadArray = message.getBytesData(); 
 					byte[] bLength = new byte[DLENGTH_SIZE];
 
@@ -988,7 +987,6 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 					}
 				}
 				else {
-					System.out.println("Message version 1");
 					keyArray = message.getJMSCorrelationIDAsBytes();
 					valueArray = message.getBytesData(); 
 				}

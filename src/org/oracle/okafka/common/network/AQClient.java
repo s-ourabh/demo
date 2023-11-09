@@ -25,7 +25,6 @@ import java.util.StringTokenizer;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
 import org.oracle.okafka.clients.CommonClientConfigs;
-import org.oracle.okafka.clients.TopicTeqParameters;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.config.AbstractConfig;
@@ -58,7 +57,7 @@ public abstract class AQClient {
 	public static final String STICKYDEQ_PARAM = "STICKY_DEQUEUE";
 	public static final String KEYBASEDENQ_PARAM = "KEY_BASED_ENQUEUE";
 	public static final String SHARDNUM_PARAM = "SHARD_NUM";
-	
+
 	
 	public AQClient(Logger log, AbstractConfig configs) {
 		this.log = log;
@@ -501,20 +500,7 @@ public abstract class AQClient {
 		}		   
 		return para;
 	}  
-	
-	public void setQueueParameter(String topic, Connection conn, HashMap<String,TopicTeqParameters> topicParaMap) throws SQLException {
-		if(topic == null) return ;
-		TopicTeqParameters topicTeqParam = new TopicTeqParameters();
-		if(!topicParaMap.containsKey(topic)) {
-			topicTeqParam.setkeyBased(getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
-			topicTeqParam.setstickyDeq(getQueueParameter(STICKYDEQ_PARAM, topic, conn));
-			topicTeqParam.setshardNum(getQueueParameter(SHARDNUM_PARAM, topic, conn));
-			topicTeqParam.setmsgVersion();
-			topicParaMap.put(topic, topicTeqParam);
-		}
-	} 
 
-		
 	public static String getProperty(String str, String property) {
 		String tmp = str.toUpperCase();
 		int index = tmp.indexOf(property.toUpperCase());
@@ -528,5 +514,5 @@ public abstract class AQClient {
 			return null;
 		return str.substring(index1 + 1, index2).trim();
 	}
-	
+
 }
