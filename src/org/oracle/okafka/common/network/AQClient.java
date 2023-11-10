@@ -480,8 +480,9 @@ public abstract class AQClient {
 			}
 		}
 	}
-
-	public int getQueueParameter(String queueParamName, String topic, Connection con) throws SQLException {
+	
+	// returns the value for a queue Parameter
+    public int getQueueParameter(String queueParamName, String topic, Connection con) throws SQLException {
 		if(topic == null) return 0;
 		String query = "begin dbms_aqadm.get_queue_parameter(?,?,?); end;";
 		CallableStatement cStmt = null;
@@ -502,14 +503,16 @@ public abstract class AQClient {
 		return para;
 	}  
     
-	public void setQueueParameter(String topic, Connection conn, HashMap<String,TopicTeqParameters> topicParaMap) throws SQLException {
+    // Fetches all the queue parameters for a topic from the TEQ server,
+    // and maintains metadata(all queue parameter values) for that topic.
+	public void fetchQueueParameters(String topic, Connection conn, HashMap<String,TopicTeqParameters> topicParaMap) throws SQLException {
 		if(topic == null) return ;
 		TopicTeqParameters topicTeqParam = new TopicTeqParameters();
 		if(!topicParaMap.containsKey(topic)) {
-			topicTeqParam.setkeyBased(getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
-			topicTeqParam.setstickyDeq(getQueueParameter(STICKYDEQ_PARAM, topic, conn));
-			topicTeqParam.setshardNum(getQueueParameter(SHARDNUM_PARAM, topic, conn));
-			topicTeqParam.setmsgVersion();
+			topicTeqParam.setKeyBased(getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
+			topicTeqParam.setStickyDeq(getQueueParameter(STICKYDEQ_PARAM, topic, conn));
+			topicTeqParam.setShardNum(getQueueParameter(SHARDNUM_PARAM, topic, conn));
+			topicTeqParam.setMsgVersion();
 			topicParaMap.put(topic, topicTeqParam);
 		}
 	} 

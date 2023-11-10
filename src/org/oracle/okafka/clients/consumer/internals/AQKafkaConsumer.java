@@ -582,7 +582,7 @@ private static void validateMsgId(String msgId) throws IllegalArgumentException 
 		
 		for(String topic: updatedCluster.topics()) {
 			try {
-				super.setQueueParameter(topic, conn, metadata.topicParaMap);
+				super.fetchQueueParameters(topic, conn, metadata.topicParaMap);
 			} catch (SQLException e) {
 				log.error("Exception while fetching TEQ parameters and updating metadata " + e.getMessage());
 			}

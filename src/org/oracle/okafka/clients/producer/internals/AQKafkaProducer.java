@@ -136,10 +136,10 @@ public final class AQKafkaProducer extends AQClient {
 		int retryCnt = 2; 
 		AQjmsBytesMessage byteMessage  = null;
 		Connection conn =null;
-		
-		int msgVersion = metadata.topicParaMap.get(topicPartition.topic()).getmsgVersion();
+		TopicTeqParameters topicTeqParam = metadata.topicParaMap.get(topicPartition.topic());
+		int msgVersion = topicTeqParam.getMsgVersion();
 		try {
-			if(metadata.topicParaMap.get(topicPartition.topic()).getkeyBased() != 2) {
+			if(topicTeqParam.getKeyBased() != 2) {
 				String errMsg = "Topic " + topicPartition.topic() + " is not an Oracle kafka topic, Please drop and re-create topic"
 						+" using Admin.createTopics() or dbms_aqadm.create_database_kafka_topic procedure";
 				throw new InvalidTopicException(errMsg);
@@ -556,7 +556,7 @@ public final class AQKafkaProducer extends AQClient {
 		
 		for(String topic: updatedCluster.topics()) {
 			try {
-				super.setQueueParameter(topic, conn, metadata.topicParaMap);
+				super.fetchQueueParameters(topic, conn, metadata.topicParaMap);
 			} catch (SQLException e) {
 				log.error("Exception while fetching TEQ parameters and updating metadata " + e.getMessage());
 			}

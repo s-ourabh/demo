@@ -13,23 +13,23 @@ public class TopicTeqParameters {
 	int msgVersion;
 
 
-	public void setkeyBased(int keyBased)
+	public void setKeyBased(int keyBased)
 	{
 		this.keyBased = keyBased;
 	}
 
-	public void setstickyDeq(int stickyDeq)
+	public void setStickyDeq(int stickyDeq)
 	{
 		this.stickyDeq = stickyDeq;
 	}
 
-	public void setshardNum(int shardNum)
+	public void setShardNum(int shardNum)
 	{
 		this.shardNum = shardNum;
 	}
 
-	public void setmsgVersion() {
-		if(getstickyDeq()!=2) {
+	public void setMsgVersion() {
+		if(getStickyDeq()!=2) {
 			this.msgVersion = 1;
 		}
 		else {
@@ -37,22 +37,22 @@ public class TopicTeqParameters {
 		}
 	}
 
-	public int getkeyBased()
+	public int getKeyBased()
 	{
 		return this.keyBased;
 	}
 
-	public int getstickyDeq()
+	public int getStickyDeq()
 	{
 		return this.stickyDeq;
 	}
 
-	public int getshardNum()
+	public int getShardNum()
 	{
 		return this.shardNum;
 	}
 
-	public int getmsgVersion() {
+	public int getMsgVersion() {
 		return this.msgVersion;
 	}
 
