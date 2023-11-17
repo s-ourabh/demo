@@ -512,7 +512,7 @@ public abstract class AQClient {
 			topicTeqParam.setKeyBased(getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
 			topicTeqParam.setStickyDeq(getQueueParameter(STICKYDEQ_PARAM, topic, conn));
 			topicTeqParam.setShardNum(getQueueParameter(SHARDNUM_PARAM, topic, conn));
-			topicTeqParam.setMsgVersion();
+			topicTeqParam.setMsgVersion(1);
 			topicParaMap.put(topic, topicTeqParam);
 		}
 	} 

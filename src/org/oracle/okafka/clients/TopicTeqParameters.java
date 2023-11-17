@@ -28,13 +28,9 @@ public class TopicTeqParameters {
 		this.shardNum = shardNum;
 	}
 
-	public void setMsgVersion() {
-		if(getStickyDeq()!=2) {
-			this.msgVersion = 1;
-		}
-		else {
-			this.msgVersion = 2;
-		}
+	public void setMsgVersion(int msgVersion) 
+	{
+        this.msgVersion = msgVersion;
 	}
 
 	public int getKeyBased()
@@ -52,8 +48,14 @@ public class TopicTeqParameters {
 		return this.shardNum;
 	}
 
-	public int getMsgVersion() {
+	public int getMsgVersion() 
+	{
+		if(getStickyDeq()!=2) {
+			this.msgVersion = 1;
+		}
+		else {
+			this.msgVersion = 2;
+		}
 		return this.msgVersion;
 	}
-
 }
