@@ -25,6 +25,7 @@ import java.util.StringTokenizer;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
 import org.oracle.okafka.clients.CommonClientConfigs;
+import org.oracle.okafka.clients.TopicTeqParameters;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.config.AbstractConfig;
@@ -479,8 +480,9 @@ public abstract class AQClient {
 			}
 		}
 	}
-
-	public int getQueueParameter(String queueParamName, String topic, Connection con) throws SQLException {
+	
+	// returns the value for a queue Parameter
+    public int getQueueParameter(String queueParamName, String topic, Connection con) throws SQLException {
 		if(topic == null) return 0;
 		String query = "begin dbms_aqadm.get_queue_parameter(?,?,?); end;";
 		CallableStatement cStmt = null;
@@ -500,6 +502,19 @@ public abstract class AQClient {
 		}		   
 		return para;
 	}  
+    
+    // Fetches all the queue parameters for a topic from the TEQ server,
+    // and maintains metadata(all queue parameter values) for that topic.
+	public void fetchQueueParameters(String topic, Connection conn, HashMap<String,TopicTeqParameters> topicParaMap) throws SQLException {
+		if(topic == null) return ;
+		TopicTeqParameters topicTeqParam = new TopicTeqParameters();
+		if(!topicParaMap.containsKey(topic)) {
+			topicTeqParam.setKeyBased(getQueueParameter(KEYBASEDENQ_PARAM, topic, conn));
+			topicTeqParam.setStickyDeq(getQueueParameter(STICKYDEQ_PARAM, topic, conn));
+			topicTeqParam.setShardNum(getQueueParameter(SHARDNUM_PARAM, topic, conn));
+	        topicParaMap.put(topic, topicTeqParam);
+		}
+	} 
 
 	public static String getProperty(String str, String property) {
 		String tmp = str.toUpperCase();

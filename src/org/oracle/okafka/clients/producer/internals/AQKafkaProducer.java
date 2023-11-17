@@ -10,6 +10,7 @@ package org.oracle.okafka.clients.producer.internals;
 import java.nio.ByteBuffer;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,6 +36,7 @@ import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
 import org.oracle.okafka.clients.Metadata;
 import org.oracle.okafka.clients.NetworkClient;
+import org.oracle.okafka.clients.TopicTeqParameters;
 import org.oracle.okafka.clients.producer.ProducerConfig;
 import org.oracle.okafka.common.Node;
 import org.apache.kafka.common.Cluster;
@@ -62,7 +64,7 @@ public final class AQKafkaProducer extends AQClient {
 
 	//Holds TopicPublishers of each node. Each TopicPublisher can contain a connection to corresponding node, session associated with that connection and topic publishers associated with that session
 	private final Map<Node, TopicPublishers> topicPublishersMap;
-	private final ProducerConfig configs;
+    private final ProducerConfig configs;
 	private final Time time;
 	private Metadata metadata; 
 	private final int DLENGTH_SIZE = 4;
@@ -133,9 +135,11 @@ public final class AQKafkaProducer extends AQClient {
 		TopicPublisher publisher = null;
 		int retryCnt = 2; 
 		AQjmsBytesMessage byteMessage  = null;
-		
+		Connection conn =null;
+		TopicTeqParameters topicTeqParam = metadata.topicParaMap.get(topicPartition.topic());
+		int msgVersion = topicTeqParam.getMsgVersion();
 		try {
-			if(!metadata.validForEnq.contains(topicPartition.topic())) {
+			if(topicTeqParam.getKeyBased() != 2) {
 				String errMsg = "Topic " + topicPartition.topic() + " is not an Oracle kafka topic, Please drop and re-create topic"
 						+" using Admin.createTopics() or dbms_aqadm.create_database_kafka_topic procedure";
 				throw new InvalidTopicException(errMsg);
@@ -157,6 +161,7 @@ public final class AQKafkaProducer extends AQClient {
 				{
 					throw new NullPointerException("No publishers created for node " + node);
 				}
+				
 				TopicSession session = nodePublishers.getSession();
 				final List<AQjmsBytesMessage> messages = new ArrayList<>();	
 				Iterator<MutableRecordBatch> mutableRecordBatchIterator = memoryRecords.batchIterator();
@@ -164,7 +169,7 @@ public final class AQKafkaProducer extends AQClient {
 					Iterator<Record>  recordIterator = mutableRecordBatchIterator.next().iterator();
 					while(recordIterator.hasNext()) {
 						Record record = recordIterator.next();
-						byteMessage = createBytesMessage(session, topicPartition, record.key(), record.value(), record.headers());
+						byteMessage = createBytesMessage(session, topicPartition, record.key(), record.value(), record.headers(), msgVersion);
 						messages.add(byteMessage);	
 					}
 				}
@@ -271,26 +276,49 @@ public final class AQKafkaProducer extends AQClient {
 	 * Creates AQjmsBytesMessage from ByteBuffer's key, value and headers
 	 */
 	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, 
-			ByteBuffer key, ByteBuffer value, Header[] headers, boolean obsolete ) throws JMSException {
+			ByteBuffer key, ByteBuffer value, Header[] headers, int messageVersion) throws JMSException {
+
 		AQjmsBytesMessage msg=null;
-		msg = (AQjmsBytesMessage)(session.createBytesMessage());
+		if(messageVersion == 2) {
+			msg = createBytesMessageV2(session,topicPartition,key, value, headers);
+		}
+		else {
+			msg = createBytesMessageV1(session,topicPartition,key, value, headers);
+		}
+		return msg;
+	}
+
+	/**
+	 * 
+	 * Creates AQjmsBytesMessage from ByteBuffer's key, value and headers in V1 version
+	 * In V1 version, Key is stored as correlation ID.
+	 */
+	private AQjmsBytesMessage createBytesMessageV1(TopicSession session, TopicPartition topicPartition, 
+			ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
+        
+		AQjmsBytesMessage msg = (AQjmsBytesMessage)(session.createBytesMessage());
 
 		if(key!=null) {
 			byte[] keyByteArray  = new byte[key.limit()];
 			key.get(keyByteArray);
 			msg.setJMSCorrelationID(new String(keyByteArray));
 		}
+
 		byte[] payload = new byte[value.limit()];
 		value.get(payload);
 		msg.writeBytes(payload);
 		payload = null;
 		msg.setStringProperty("topic", topicPartition.topic());
 		msg.setStringProperty(AQClient.PARTITION_PROPERTY, Integer.toString(topicPartition.partition()*2));
+		msg.setIntProperty(MESSAGE_VERSION, 1);
 
 		return msg;
 	}
 
 	/*
+	 * Creates AQjmsBytesMessage from ByteBuffer's key, value and headers in V2 version
+	 * In V2 version, Key is stored as part of the message payload as described below.
+	 * 
 	 * Construct Byte Payload in below format:
 	 * | KEY LENGTH (4 Bytes Fixed)          | KEY   |
 	 * | VALUE LENGTH (4 BYTES FIXED)        | VALUE |
@@ -304,21 +332,20 @@ public final class AQKafkaProducer extends AQClient {
 	 * Number of headers are set in property "AQINTERNAL_HEADERCOUNT"
 	 * 
 	 * 	*/
-	
-	private AQjmsBytesMessage createBytesMessage(TopicSession session, TopicPartition topicPartition, 
+	private AQjmsBytesMessage createBytesMessageV2(TopicSession session, TopicPartition topicPartition, 
 			ByteBuffer key, ByteBuffer value, Header[] headers) throws JMSException {
-
+		
 		AQjmsBytesMessage msg=null;
 		int keyLen = 0;
 		int valueLen =0;
 
 		int hKeysLen[] = null;
 		int hValuesLen[] = null;
-		
+
 		byte[] keyByteArray  = null;
 		byte[] valueByteArray = null;
-		
-		
+
+
 		if(headers != null)
 		{
 			hKeysLen = new int[headers.length];
@@ -329,22 +356,22 @@ public final class AQKafkaProducer extends AQClient {
 
 		int totalSize = 0;
 		if(key != null) {
-			
+
 			keyByteArray =  new byte[key.limit()];
 			key.get(keyByteArray);
 			keyLen = keyByteArray.length;
 		}
-	
+
 		totalSize += (keyLen + DLENGTH_SIZE );
-		
+
 		if(value != null) {
 			valueByteArray = new byte[value.limit()];
 			value.get(valueByteArray);
 			valueLen = valueByteArray.length;
-			
+
 		}
 		totalSize += (valueLen + DLENGTH_SIZE);
-		
+
 		if(headers != null) {
 			int hIndex = 0;
 			for(Header h:headers)
@@ -383,7 +410,7 @@ public final class AQKafkaProducer extends AQClient {
 				pBuffer.put(h.value());
 			}
 		}
-		
+
 		pBuffer.rewind();
 		byte[] payload = new byte[pBuffer.limit()];
 		pBuffer.get(payload);
@@ -394,11 +421,12 @@ public final class AQKafkaProducer extends AQClient {
 		{
 			msg.setIntProperty(HEADERCOUNT_PROPERTY, headers.length);
 		}
-		
-	    msg.setIntProperty(MESSAGE_VERSION, 2);
+
+		msg.setIntProperty(MESSAGE_VERSION, 2);
 
 		return msg;
 	}
+
 
 	/**
 	 * Creates response for records in a producer batch from each corresponding AQjmsBytesMessage data updated after send is done.
@@ -522,18 +550,18 @@ public final class AQKafkaProducer extends AQClient {
 		ClientResponse response = getMetadataNow(request, conn, node, metadata.updateRequested());
 
 		MetadataResponse metadataresponse = (MetadataResponse)response.responseBody();
-
+		
+	
 		org.apache.kafka.common.Cluster updatedCluster = metadataresponse.cluster();
-
+		
 		for(String topic: updatedCluster.topics()) {
 			try {
-				if(super.getQueueParameter(KEYBASEDENQ_PARAM, topic, conn)==2) {
-					metadata.validForEnq.add(topic);
-				}
-			} catch (Exception e) {
-				log.debug(e.getMessage());
+				super.fetchQueueParameters(topic, conn, metadata.topicParaMap);
+			} catch (SQLException e) {
+				log.error("Exception while fetching TEQ parameters and updating metadata " + e.getMessage());
 			}
 		}
+
 
 		if(response.wasDisconnected()) {
 			topicPublishersMap.remove(metadata.getNodeById(Integer.parseInt(request.destination())));
