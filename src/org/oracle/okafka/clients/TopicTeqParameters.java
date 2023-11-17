@@ -28,7 +28,7 @@ public class TopicTeqParameters {
 		this.shardNum = shardNum;
 	}
 
-	public void setMsgVersion(int msgVersion) 
+	private void setMsgVersion(int msgVersion) 
 	{
         this.msgVersion = msgVersion;
 	}
